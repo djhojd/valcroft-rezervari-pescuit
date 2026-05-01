@@ -3,8 +3,12 @@ import type { Slot } from "./parser";
 export type StoredSlot = { calId: string; date: string };
 
 export async function readSnapshot(kv: KVNamespace): Promise<StoredSlot[]> {
-  const raw = await kv.get("snapshot", "json");
-  return Array.isArray(raw) ? (raw as StoredSlot[]) : [];
+  try {
+    const raw = await kv.get("snapshot", "json");
+    return Array.isArray(raw) ? (raw as StoredSlot[]) : [];
+  } catch {
+    return [];
+  }
 }
 
 export async function writeSnapshot(kv: KVNamespace, slots: Slot[]): Promise<void> {
@@ -13,9 +17,13 @@ export async function writeSnapshot(kv: KVNamespace, slots: Slot[]): Promise<voi
 }
 
 export async function readRecipients(kv: KVNamespace): Promise<string[]> {
-  const raw = await kv.get("recipients", "json");
-  if (Array.isArray(raw)) return raw.filter((x): x is string => typeof x === "string");
-  return [];
+  try {
+    const raw = await kv.get("recipients", "json");
+    if (Array.isArray(raw)) return raw.filter((x): x is string => typeof x === "string");
+    return [];
+  } catch {
+    return [];
+  }
 }
 
 export function diffSlots(current: Slot[], previous: StoredSlot[]): Slot[] {
