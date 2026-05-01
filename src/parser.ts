@@ -13,7 +13,6 @@ export async function parseAvailability(html: string): Promise<Slot[]> {
   let pBuf = "";
 
   // Tracked per <table>
-  let inTable = false;
   let currentCalId: string | null = null;
   let currentPontoon: string | null = null;
   let currentMonth: number | null = null;
@@ -22,8 +21,6 @@ export async function parseAvailability(html: string): Promise<Slot[]> {
   let inMonthHeader = false;
 
   // Tracked per <td>
-  let inTd = false;
-  let currentTdClasses: string[] = [];
   let currentTdSkipped = false;
   let dayBuf = "";
   let inDay = false;
@@ -50,7 +47,6 @@ export async function parseAvailability(html: string): Promise<Slot[]> {
     // Each pontoon's calendar table
     .on("table[data-calendar-id]", {
       element(el) {
-        inTable = true;
         currentCalId = el.getAttribute("data-calendar-id");
         currentPontoon = lastPontoonLabel;
         currentMonth = null;
@@ -78,10 +74,8 @@ export async function parseAvailability(html: string): Promise<Slot[]> {
     // Day cells
     .on("table[data-calendar-id] td", {
       element(el) {
-        inTd = true;
         const cls = (el.getAttribute("class") || "").trim();
-        currentTdClasses = cls ? cls.split(/\s+/) : [];
-        currentTdSkipped = !isAvailable(currentTdClasses);
+        currentTdSkipped = !isAvailable(cls ? cls.split(/\s+/) : []);
         dayBuf = "";
       },
     })
