@@ -10,6 +10,7 @@ export async function parseAvailability(html: string): Promise<Slot[]> {
 
   // Tracked across the whole stream
   let lastPontoonLabel: string | null = null;
+  let pBuf = "";
 
   // Tracked per <table>
   let inTable = false;
@@ -33,11 +34,16 @@ export async function parseAvailability(html: string): Promise<Slot[]> {
   const rewriter = new HTMLRewriter()
     // Track most recent "Ponton X" paragraph
     .on("p", {
+      element() {
+        pBuf = "";
+      },
       text(t) {
-        if (!t.lastInTextNode) return;
-        const txt = (t.text || "").trim();
-        const m = txt.match(/^Ponton\s+\d+/i);
-        if (m) lastPontoonLabel = m[0];
+        pBuf += t.text;
+        if (t.lastInTextNode) {
+          const m = pBuf.trim().match(/^Ponton\s+\d+/i);
+          if (m) lastPontoonLabel = m[0];
+          pBuf = "";
+        }
       },
     })
 
