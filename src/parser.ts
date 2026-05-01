@@ -53,7 +53,7 @@ export async function parseAvailability(html: string): Promise<Slot[]> {
     })
 
     // Month/year header (Booked plugin renders it inside the table thead)
-    .on("table[data-calendar-id] .calendar-header", {
+    .on("table[data-calendar-id] .monthName", {
       element() { inMonthHeader = true; monthHeaderBuf = ""; },
       text(t) {
         if (inMonthHeader) monthHeaderBuf += t.text;
