@@ -1,0 +1,20 @@
+{
+  "$schema": "https://unpkg.com/wrangler@latest/config-schema.json",
+  "name": "valcroft-availability-notifier",
+  "main": "src/worker.ts",
+  "compatibility_date": "2026-04-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "triggers": {
+    "crons": ["0 * * * *"]
+  },
+  "vars": {
+    "PAGE_URL": "https://valcroft.ro/rezervari-pescuit/",
+    "SENDER_EMAIL": "monitor@REPLACE-WITH-YOUR-DOMAIN"
+  },
+  "kv_namespaces": [
+    { "binding": "KV", "id": "REPLACE_WITH_KV_ID" }
+  ],
+  "send_email": [
+    { "name": "EMAIL", "destination_address": null }
+  ]
+}

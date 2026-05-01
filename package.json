@@ -1,0 +1,27 @@
+{
+  "name": "valcroft-rezervari-pescuit",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "directories": {
+    "doc": "docs"
+  },
+  "scripts": {
+    "dev": "wrangler dev --test-scheduled",
+    "deploy": "wrangler deploy",
+    "tail": "wrangler tail",
+    "typecheck": "tsc --noEmit"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "module",
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20260501.1",
+    "typescript": "^6.0.3",
+    "wrangler": "^4.87.0"
+  },
+  "dependencies": {
+    "mimetext": "^3.0.28"
+  }
+}
