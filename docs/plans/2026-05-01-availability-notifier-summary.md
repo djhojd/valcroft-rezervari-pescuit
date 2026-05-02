@@ -18,9 +18,9 @@ opens up.
 - **Repo:** <https://github.com/djhojd/valcroft-rezervari-pescuit>
 - **Cloudflare account:** `claudiu-hojda-djhojd`
 - **KV namespace:** `94b13d58abc8487ca78eef3e9827f56c` (binding `KV`)
-- **Sender:** `monitor@claudiu.dev` (Email Routing on `claudiu.dev`)
+- **Sender:** `rezervari-pescuit@claudiu.dev` (Email Routing on `claudiu.dev`)
 - **Recipients (KV `recipients`):** `["djhojd@gmail.com"]`
-- **Latest deployed version:** `ceb888db-4ff4-4d68-ab2d-c7c86d587338`
+- **Latest deployed version:** `8a33fd31-6f5b-47db-b628-8361d11806d6`
 
 ## Decisions log
 
