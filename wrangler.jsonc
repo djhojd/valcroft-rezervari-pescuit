@@ -13,7 +13,7 @@
   },
   "vars": {
     "PAGE_URL": "https://valcroft.ro/rezervari-pescuit/",
-    "SENDER_EMAIL": "monitor@claudiu.dev"
+    "SENDER_EMAIL": "rezervari-pescuit@claudiu.dev"
   },
   "kv_namespaces": [
     { "binding": "KV", "id": "94b13d58abc8487ca78eef3e9827f56c" }
