@@ -15,6 +15,9 @@ export default {
   async scheduled(_event: ScheduledEvent, env: Env, ctx: ExecutionContext) {
     ctx.waitUntil(run(env));
   },
+  async fetch(): Promise<Response> {
+    return new Response("not found", { status: 404 });
+  },
 };
 
 async function run(env: Env): Promise<void> {

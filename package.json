@@ -8,6 +8,7 @@
   },
   "scripts": {
     "dev": "wrangler dev --test-scheduled",
+    "dev:remote": "wrangler dev --remote --test-scheduled",
     "deploy": "wrangler deploy",
     "tail": "wrangler tail",
     "typecheck": "tsc --noEmit"
