@@ -1,5 +1,5 @@
 import { EmailMessage } from "cloudflare:email";
-import { createMimeMessage } from "mimetext";
+import { createMimeMessage } from "mimetext/browser";
 import type { Slot } from "./parser";
 
 export type NotifyEnv = {
