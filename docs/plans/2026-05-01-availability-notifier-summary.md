@@ -1,0 +1,221 @@
+# Valcroft availability notifier — v1 summary
+
+**Status:** shipped, live in production.
+**Date:** 2026-05-01.
+
+## What this is
+
+A single Cloudflare Worker that runs once an hour, scrapes
+<https://valcroft.ro/rezervari-pescuit/>, and emails a fixed list of recipients
+whenever a fishing-pontoon spot in the **current week** becomes newly
+available since the previous tick. Edge-triggered: silent unless something
+opens up.
+
+## Live at
+
+- **Worker URL:** <https://valcroft-availability-notifier.claudiu-hojda-djhojd.workers.dev>
+- **Schedule:** `0 * * * *` (every hour, top of the hour)
+- **Repo:** <https://github.com/djhojd/valcroft-rezervari-pescuit>
+- **Cloudflare account:** `claudiu-hojda-djhojd`
+- **KV namespace:** `94b13d58abc8487ca78eef3e9827f56c` (binding `KV`)
+- **Sender:** `monitor@claudiu.dev` (Email Routing on `claudiu.dev`)
+- **Recipients (KV `recipients`):** `["djhojd@gmail.com"]`
+- **Latest deployed version:** `ceb888db-4ff4-4d68-ab2d-c7c86d587338`
+
+## Decisions log
+
+Every meaningful choice made during the session, in roughly the order it was
+made.
+
+| # | Decision | Rationale |
+|---|---|---|
+| 1 | Run on Cloudflare Workers + Cron Triggers (vs. GitHub Actions, local Windows, VPS) | Always-on, lowest friction, zero cost at this scale, aligned with existing Cloudflare tooling. |
+| 2 | Email notifications (vs. Telegram, Discord, push services) | User-preferred channel; a fixed recipient list is fine. |
+| 3 | Monitor **current week only** (vs. fixed dates, rolling targets, full month) | Simplest v1; deliberately deferred multi-week/cross-month handling. |
+| 4 | Edge-triggered diff against previous KV snapshot (vs. level-triggered "any availability is news") | Avoids spam on long-open slots; the only signal that matters is "newly opened." |
+| 5 | Hourly cron (vs. per-minute, per-5-min, per-15-min) | Pragmatic balance; can tighten if openings get snapped up faster than 1h. |
+| 6 | **Cloudflare Email Workers** native binding (vs. Resend / MailChannels / SMTP) | User has CF-hosted domains and Email Routing; no third-party account needed. Recipients must be verified Email Routing destinations — fine for a fixed list. |
+| 7 | Plain `fetch` + HTMLRewriter (vs. Browser Rendering, REST API) | Page is server-rendered — availability is encoded in `<td>` CSS classes (`booked`, `prev-date`, `prev-month`, empty = available). One HTTPS GET, parse, done. Browser Rendering would have been overkill. |
+| 8 | KV `recipients` as JSON array, hot-editable | Add/remove recipients with `wrangler kv key put`, no code change, no redeploy. |
+| 9 | Slot identity = `(calId, date)`, not `(pontoon name, date)` | Renaming a pontoon shouldn't generate false-positive openings. |
+| 10 | At-least-once semantics on the snapshot | Snapshot is only written after a successful fetch+parse and a non-totally-failed notify. Worst case is a duplicate notification, which is fine. |
+| 11 | Fail closed: parse zero slots → don't touch KV | Treat an empty parse as "site format changed," not "everything got booked overnight." |
+| 12 | Tests deferred for v1 | User decision; smoke testing via `wrangler dev --remote --test-scheduled` is the only verification. |
+| 13 | Apply `workers-best-practices` skill retroactively after first deploy | The user flagged that I'd skipped it; the audit produced three meaningful fixes (generated `Env`, structured JSON logs, observability config). Captured as a global rule in `~/.claude/rules/skill-usage.md`. |
+
+## Architecture
+
+```
+[Cron 0 * * * *] → Worker scheduled handler
+                       │
+                       ├── fetchPage(env.PAGE_URL)            (HTTPS GET, retry on 5xx)
+                       ├── parseAvailability(html)            (HTMLRewriter → Slot[])
+                       ├── filter to currentWeekDates()       (Mon–Sun, Europe/Bucharest)
+                       ├── readSnapshot(env.KV)               (previous-tick state, [] if missing)
+                       ├── diffSlots(current, previous)       (newly-available)
+                       ├── if non-empty:
+                       │     readRecipients(env.KV)           (recipient list, [] if missing)
+                       │     sendEmails(diff, recipients, env)(Email Workers binding, one msg/recipient)
+                       └── writeSnapshot(env.KV, current)     (only if not all-sends-failed)
+```
+
+### Module layout
+
+| File | Lines | Role |
+|---|---|---|
+| `src/worker.ts` | 73 | `scheduled()` + `fetch()` handlers; orchestrates the run |
+| `src/fetcher.ts` | 28 | HTTPS GET with retry on 5xx, custom UA |
+| `src/parser.ts` | ~110 | HTMLRewriter pass extracting `Slot { calId, pontoon, date }` |
+| `src/week.ts` | 41 | `currentWeekDates()` — Mon→Sun in Europe/Bucharest |
+| `src/state.ts` | 26 | KV snapshot/recipients reads/writes; tolerant of malformed JSON |
+| `src/notify.ts` | 65 | `sendEmails()` — per-recipient via Email Workers binding |
+| `worker-configuration.d.ts` | (generated) | `Env` interface generated by `wrangler types` |
+| `wrangler.jsonc` | 23 | cron, KV binding, send_email binding, vars, observability |
+
+## What works (verified)
+
+- Parser fires against the live page and finds 1126 total slots, 12 in the
+  current week (smoke test, 2026-05-01).
+- Orchestration logs the four-stage flow correctly:
+  `parsed=… weekSlots=…`, `previous=… newly=…`, `sent: <recipient>`,
+  `done in Nms (notified)`.
+- End-to-end smoke test (`wrangler dev --remote --test-scheduled`) delivered a
+  real email to `djhojd@gmail.com` with the expected Romanian body:
+  `Locuri noi disponibile săptămâna aceasta:` followed by a numerically
+  sorted pontoon list with dates formatted as `dum 3 mai`.
+- Production KV holds the post-smoke-test snapshot; subsequent ticks should
+  log `previous=12 newly=0` until something actually changes.
+- All committed code passes `tsc --noEmit` under strict mode.
+- Logging is structured JSON, searchable in the Workers Logs dashboard
+  (observability enabled, `head_sampling_rate: 1`).
+
+## What we skipped (and why)
+
+| Skipped | Reason |
+|---|---|
+| **Automated tests** | User-deferred for v1. Smoke testing via `wrangler dev --remote --test-scheduled` covers the happy path. |
+| **Multi-week / future-week monitoring** | v1 scope: current week only. Rolling weeks need a second `?date=YYYY-MM` fetch and minor parser changes. |
+| **Cross-month week handling** | The page renders only the current month; a week spanning month boundaries will miss days in the adjacent month. Accepted; ~1 day/year impact at week edges. |
+| **Multiple notification channels** | Email-only by user choice. |
+| **Per-pontoon recipient routing** | Not requested. Would need per-recipient KV value or a shared subscription map. |
+| **Per-pontoon filtering** | Not requested. Currently every recipient sees every newly-opened slot. |
+| **Pause flag / silence window** | Not requested. Pause today by disabling the cron trigger or removing recipients. |
+| **HTML-escape pontoon names / page URL in email body** | Inputs are constrained (regex-validated pontoon names, operator-controlled `PAGE_URL`); not user input. Worth a comment if either ever becomes user-influenced. |
+| **`@types/node`** | Wrangler suggested it because `nodejs_compat` is enabled, but no `node:` imports in our code. Skipped until something actually needs it. |
+| **`traces` block in `observability`** | Cost vs. value not worth it for an hourly worker with 4 sequential async steps. |
+| **Queues / Workflows for the email loop** | Single recipient currently; sequential `for` loop over recipients is fine. Revisit if the recipient list grows or sends become slow. |
+| **Streaming on `await res.text()`** | Page is bounded ~282 KB, well under the 128 MB Workers memory limit. The streaming rule targets unbounded payloads. |
+| **README operations section** | The design and this summary doc cover ops; README stays minimal. |
+
+## What could come next (prioritized backlog)
+
+### Most likely to want soon
+
+1. **Tests.** Add Vitest with `@cloudflare/vitest-pool-workers`. High-value
+   targets: `currentWeekDates()` (DST, year-rollover, Sunday placement),
+   `parseAvailability()` against a saved HTML fixture, `diffSlots()` semantics,
+   `sendEmails()` with a mocked `EMAIL` binding. The plan already lists this
+   as the v2 starting point.
+2. **Multi-week monitoring.** Parameterize `weeksAhead` via a KV value or
+   `vars` entry. For weeks beyond the current month, fetch the page with the
+   Booked plugin's `?date=YYYY-MM` query string for the relevant month(s) and
+   merge results.
+3. **Cross-month week boundary fix.** For the partial week at the start/end
+   of a month, also fetch the adjacent month so no days are silently
+   excluded. Easiest path: always fetch `currentMonth` and `nextMonth`,
+   union the results, then filter by week.
+4. **Per-pontoon subscriptions.** KV `subscriptions` as
+   `{ recipient: ["calId1", "calId2"] }` (or `"*"` for all). Adjust the
+   notify loop to compute per-recipient diffs.
+
+### Smaller wins
+
+5. **Pause flag.** KV `paused: true` skips the notify step and just records
+   the snapshot. Cheaper than disabling the cron.
+6. **Daily digest fallback.** For people who want a "still-open" reminder
+   even if nothing transitioned, add an opt-in daily summary.
+7. **CI: GitHub Actions running typecheck + (eventually) tests on push.**
+8. **Pre-commit hook regenerating `worker-configuration.d.ts`** when
+   `wrangler.jsonc` changes, so the committed file doesn't drift.
+9. **Lint with `no-floating-promises`.** Add `oxlint` (lighter than ESLint)
+   with `typescript/no-floating-promises` enabled. Currently clean by
+   inspection but a static check is cheap.
+10. **Log destination URL in emails.** Each opening could deep-link to the
+    specific pontoon section anchor on the page (`#ponton-N` if it exists).
+11. **Tighten cron cadence** if real-world experience shows openings get
+    snapped up before the next tick.
+12. **Telegram or Discord channel** as a faster signal alternative for the
+    user, layered on top of email.
+
+### Speculative
+
+13. **Move to Workflows** if the orchestration grows beyond ~5 steps or
+    needs durable retries with per-step state.
+14. **Use Workers Queues** if the recipient list grows past ~10 and email
+    fan-out becomes the dominant cost.
+
+## How to operate it
+
+```sh
+# Tail live logs
+npm run tail
+
+# Local end-to-end smoke test against production KV + Email
+npm run dev:remote
+# ... then in another shell:
+curl "http://localhost:8787/__scheduled?cron=0+*+*+*+*"
+
+# Add or change recipients (one-shot, no redeploy)
+npx wrangler kv key put --binding=KV --remote recipients '["a@example.com","b@example.com"]'
+
+# Force re-emit "all currently-available" on next tick
+npx wrangler kv key delete --binding=KV --remote snapshot
+
+# Pause notifications for a while
+# (option A) disable the cron trigger in wrangler.jsonc and redeploy
+# (option B) clear the recipients list — KV `recipients` to `[]`
+
+# After changing wrangler.jsonc bindings, regenerate the Env type
+npx wrangler types
+
+# Deploy
+npm run deploy
+```
+
+A new recipient must first be **verified as an Email Routing destination
+address** on `claudiu.dev` (CF dashboard → claudiu.dev → Email → Email
+Routing → Destination addresses → add → click verification email).
+
+## Reference docs
+
+- `docs/plans/2026-05-01-availability-notifier-design.md` — design rationale
+  and architectural choices.
+- `docs/plans/2026-05-01-availability-notifier-plan.md` — the
+  task-by-task implementation plan that the v1 build executed.
+
+## Commit log (chronological, oldest first)
+
+```
+be92b90 chore: bootstrap Cloudflare Worker project
+ec09ab7 feat: current-week dates in Europe/Bucharest
+f0bf5e9 feat: HTML fetcher with retry on 5xx
+7fc3621 feat: HTMLRewriter parser for Booked plugin availability
+b593bd2 fix: parse month from .monthName instead of .calendar-header
+fd9567a fix: buffer Ponton label text across HTMLRewriter chunks
+9fa5288 feat: KV snapshot, recipients, and slot diff
+6bba56d feat: per-recipient email via Email Workers binding
+36ee4c0 feat: scheduled handler orchestration
+c422739 fix: tolerate malformed KV JSON in readers
+355bb00 chore: enable Workers Observability
+b95aa76 refactor: drop dead parser state and unused html-rewriter-wasm dep
+8ba6350 chore: wire KV namespace id, sender email; fix send_email binding shape
+2f467ee chore: add dev:remote script and 404 fetch handler
+223cf0f chore: apply Workers best practices
+```
+
+The two `fix:` commits during the parser work (`b593bd2`, `fd9567a`)
+correspond to two real bugs in the original plan that the live-page smoke
+check caught: the wrong CSS selector for the month/year label
+(`.calendar-header` vs. `.monthName`) and missing cross-chunk text
+buffering in the `<p>` handler. Both surfaced *because* of the discipline
+to smoke-test against the real page rather than ship blind.
