@@ -20,7 +20,7 @@ opens up.
 - **KV namespace:** `94b13d58abc8487ca78eef3e9827f56c` (binding `KV`)
 - **Sender:** `rezervari-pescuit@claudiu.dev` (Email Routing on `claudiu.dev`)
 - **Recipients (KV `recipients`):** `["djhojd@gmail.com"]`
-- **Latest deployed version:** `8a33fd31-6f5b-47db-b628-8361d11806d6`
+- **Latest deployed version:** `5108bab9-c7ad-4e43-a7fa-f438bc2e4e8e`
 
 ## Decisions log
 
@@ -101,7 +101,7 @@ made.
 | **Per-pontoon filtering** | Not requested. Currently every recipient sees every newly-opened slot. |
 | **Pause flag / silence window** | Not requested. Pause today by disabling the cron trigger or removing recipients. |
 | **HTML-escape pontoon names / page URL in email body** | Inputs are constrained (regex-validated pontoon names, operator-controlled `PAGE_URL`); not user input. Worth a comment if either ever becomes user-influenced. |
-| **`@types/node`** | Wrangler suggested it because `nodejs_compat` is enabled, but no `node:` imports in our code. Skipped until something actually needs it. |
+| **`@types/node`** | No `node:` imports in our code (verified). `nodejs_compat` was dropped after switching `mimetext` to its `mimetext/browser` entrypoint, which avoids the only transitive `node:os` dependency. |
 | **`traces` block in `observability`** | Cost vs. value not worth it for an hourly worker with 4 sequential async steps. |
 | **Queues / Workflows for the email loop** | Single recipient currently; sequential `for` loop over recipients is fine. Revisit if the recipient list grows or sends become slow. |
 | **Streaming on `await res.text()`** | Page is bounded ~282 KB, well under the 128 MB Workers memory limit. The streaming rule targets unbounded payloads. |
