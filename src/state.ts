@@ -2,18 +2,28 @@ import type { Slot } from "./parser";
 
 export type StoredSlot = { calId: string; date: string };
 
-export async function readSnapshot(kv: KVNamespace): Promise<StoredSlot[]> {
+export type WatchedState = {
+  date: string;       // YYYY-MM-DD (Bucharest local date)
+  snap15: StoredSlot[]; // slots at last 15-min tick; basis for edge diff
+  countHourly: number;  // slot count at last :00 tick; basis for decrease detection
+};
+
+export async function readWatched(kv: KVNamespace): Promise<WatchedState | null> {
   try {
-    const raw = await kv.get("snapshot", "json");
-    return Array.isArray(raw) ? (raw as StoredSlot[]) : [];
+    const raw = await kv.get("watched", "json");
+    if (raw && typeof (raw as WatchedState).date === "string") return raw as WatchedState;
+    return null;
   } catch {
-    return [];
+    return null;
   }
 }
 
-export async function writeSnapshot(kv: KVNamespace, slots: Slot[]): Promise<void> {
-  const payload: StoredSlot[] = slots.map((s) => ({ calId: s.calId, date: s.date }));
-  await kv.put("snapshot", JSON.stringify(payload));
+export async function writeWatched(kv: KVNamespace, state: WatchedState): Promise<void> {
+  await kv.put("watched", JSON.stringify(state));
+}
+
+export async function clearWatched(kv: KVNamespace): Promise<void> {
+  await kv.delete("watched");
 }
 
 export async function readRecipients(kv: KVNamespace): Promise<string[]> {
@@ -29,4 +39,8 @@ export async function readRecipients(kv: KVNamespace): Promise<string[]> {
 export function diffSlots(current: Slot[], previous: StoredSlot[]): Slot[] {
   const seen = new Set(previous.map((s) => `${s.calId}:${s.date}`));
   return current.filter((s) => !seen.has(`${s.calId}:${s.date}`));
+}
+
+export function slotsToStored(slots: Slot[]): StoredSlot[] {
+  return slots.map((s) => ({ calId: s.calId, date: s.date }));
 }
