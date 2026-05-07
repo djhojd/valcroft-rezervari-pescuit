@@ -1,7 +1,7 @@
 import { fetchPage } from "./fetcher";
 import { parseAvailability, type Slot } from "./parser";
 import { readWatched, writeWatched, clearWatched, readRecipients, diffSlots, slotsToStored } from "./state";
-import { sendInitialEmail, sendNewSlotsEmail, sendOccupancyEmail, sendExpiryEmail } from "./notify";
+import { sendInitialEmail, sendNewSlotsEmail, sendOccupancyEmail, sendExpiryEmail, sendManualStopEmail } from "./notify";
 import { renderWatchPage, renderConfirmPage, renderErrorPage } from "./ui";
 
 export default {
@@ -134,6 +134,17 @@ async function handleFetch(request: Request, env: Env): Promise<Response> {
     const action = formData.get("action");
 
     if (action === "stop") {
+      const watched = await readWatched(env.KV);
+      if (watched) {
+        const recipients = await readRecipients(env.KV);
+        if (recipients.length > 0) {
+          const results = await sendManualStopEmail(watched.date, recipients, env);
+          for (const r of results) {
+            if (r.ok) console.log(JSON.stringify({ event: "manual_stop_email_sent", recipient: r.recipient }));
+            else console.error(JSON.stringify({ event: "manual_stop_email_failed", recipient: r.recipient, error: r.error }));
+          }
+        }
+      }
       await clearWatched(env.KV);
       console.log(JSON.stringify({ event: "watch_stopped" }));
       return new Response(renderConfirmPage("Urmărire oprită.", path), {

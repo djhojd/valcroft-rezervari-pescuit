@@ -119,6 +119,18 @@ export async function sendOccupancyEmail(
   return sendEmailToAll(subject, body, recipients, env);
 }
 
+/** Sent when the user manually stops the watch via the UI. */
+export async function sendManualStopEmail(
+  date: string,
+  recipients: string[],
+  env: NotifyEnv
+): Promise<SendResult[]> {
+  const subject = `Valcroft: urmărire oprită pentru ${formatSlotDate(date)}`;
+  const body = `<p>Urmărirea pentru <strong>${formatDateLong(date)}</strong> a fost oprită manual.</p>
+<p><a href="${env.PAGE_URL}">Vezi calendarul</a></p>`;
+  return sendEmailToAll(subject, body, recipients, env);
+}
+
 /** Sent when the watch auto-expires at 07:00 on the watched date. */
 export async function sendExpiryEmail(
   date: string,
