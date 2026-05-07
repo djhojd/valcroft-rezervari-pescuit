@@ -169,7 +169,7 @@ async function handleFetch(request: Request, env: Env): Promise<Response> {
       const recipients = await readRecipients(env.KV);
 
       if (recipients.length > 0) {
-        const results = await sendInitialEmail(date, dateSlots, recipients, env);
+        const results = await sendInitialEmail(date, dateSlots, 15, recipients, env);
         for (const r of results) {
           if (r.ok) console.log(JSON.stringify({ event: "initial_email_sent", recipient: r.recipient }));
           else console.error(JSON.stringify({ event: "initial_email_failed", recipient: r.recipient, error: r.error }));

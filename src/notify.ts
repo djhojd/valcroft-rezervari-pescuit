@@ -77,15 +77,17 @@ async function sendEmailToAll(
 export async function sendInitialEmail(
   date: string,
   slots: Slot[],
+  intervalMinutes: number,
   recipients: string[],
   env: NotifyEnv
 ): Promise<SendResult[]> {
   const dateLabel = formatDateLong(date);
   const count = slots.length;
   const subject = `Valcroft: urmărire activată pentru ${formatSlotDate(date)} — ${count} ${count === 1 ? "loc liber" : "locuri libere"}`;
+  const intervalNote = `<p>Verificare automată la fiecare <strong>${intervalMinutes} minute</strong>. Vei fi notificat doar când apar locuri noi.</p>`;
   const body = count === 0
-    ? `<p>Niciun loc disponibil momentan pe <strong>${dateLabel}</strong>. Vei fi notificat imediat ce apar locuri libere.</p><p><a href="${env.PAGE_URL}">Vezi calendarul</a></p>`
-    : `<p>Locuri disponibile pe <strong>${dateLabel}</strong>:</p>${buildSlotList(slots, env.PAGE_URL)}`;
+    ? `<p>Niciun loc disponibil momentan pe <strong>${dateLabel}</strong>.</p>${intervalNote}<p><a href="${env.PAGE_URL}">Vezi calendarul</a></p>`
+    : `<p>Locuri disponibile pe <strong>${dateLabel}</strong>:</p>${buildSlotList(slots, env.PAGE_URL)}${intervalNote}`;
   return sendEmailToAll(subject, body, recipients, env);
 }
 
