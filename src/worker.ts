@@ -102,7 +102,7 @@ async function runScheduled(event: ScheduledController, env: Env): Promise<void>
 
 async function handleFetch(request: Request, env: Env): Promise<Response> {
   const url = new URL(request.url);
-  const path = env.WATCH_PATH;
+  const path = env.SECRET_PATH;
 
   if (url.pathname !== path) {
     return new Response("Not Found", { status: 404 });
