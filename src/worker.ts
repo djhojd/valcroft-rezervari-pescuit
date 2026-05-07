@@ -1,5 +1,5 @@
 import { fetchPage } from "./fetcher";
-import { parseAvailability } from "./parser";
+import { parseAvailability, type Slot } from "./parser";
 import { readWatched, writeWatched, clearWatched, readRecipients, diffSlots, slotsToStored } from "./state";
 import { sendInitialEmail, sendNewSlotsEmail, sendOccupancyEmail } from "./notify";
 import { renderWatchPage, renderConfirmPage, renderErrorPage } from "./ui";
@@ -40,7 +40,13 @@ async function runScheduled(event: ScheduledController, env: Env): Promise<void>
     return;
   }
 
-  const allSlots = await parseAvailability(html);
+  let allSlots: Slot[];
+  try {
+    allSlots = await parseAvailability(html);
+  } catch (e) {
+    console.error(JSON.stringify({ event: "parse_failed", error: e instanceof Error ? e.message : String(e) }));
+    return;
+  }
   if (allSlots.length === 0) {
     console.error(JSON.stringify({ event: "parse_zero_slots", note: "site format may have changed; not touching KV" }));
     return;
@@ -98,7 +104,7 @@ async function handleFetch(request: Request, env: Env): Promise<Response> {
   const url = new URL(request.url);
   const token = url.searchParams.get("token") ?? "";
 
-  if (token !== env.WATCH_TOKEN) {
+  if (!(await tokenValid(token, env.WATCH_TOKEN))) {
     return new Response("Forbidden", { status: 403 });
   }
 
@@ -148,7 +154,17 @@ async function handleFetch(request: Request, env: Env): Promise<Response> {
         });
       }
 
-      const allSlots = await parseAvailability(html);
+      let allSlots: Slot[];
+      try {
+        allSlots = await parseAvailability(html);
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        console.error(JSON.stringify({ event: "watch_parse_failed", error: msg }));
+        return new Response(renderErrorPage("Eroare la procesarea datelor. Încearcă din nou.", token), {
+          status: 502,
+          headers: { "Content-Type": "text/html; charset=utf-8" },
+        });
+      }
       const dateSlots = allSlots.filter((s) => s.date === date);
       const recipients = await readRecipients(env.KV);
 
@@ -189,6 +205,15 @@ async function handleFetch(request: Request, env: Env): Promise<Response> {
 }
 
 // ── Utilities ────────────────────────────────────────────────────────────────
+
+async function tokenValid(provided: string, secret: string): Promise<boolean> {
+  const enc = new TextEncoder();
+  const [a, b] = await Promise.all([
+    crypto.subtle.digest("SHA-256", enc.encode(provided)),
+    crypto.subtle.digest("SHA-256", enc.encode(secret)),
+  ]);
+  return crypto.subtle.timingSafeEqual(a, b);
+}
 
 function todayBucharest(now: Date): string {
   const parts = new Intl.DateTimeFormat("en-CA", {
