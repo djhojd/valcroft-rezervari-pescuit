@@ -1,26 +1,34 @@
 {
-  "$schema": "https://unpkg.com/wrangler@latest/config-schema.json",
-  "name": "valcroft-availability-notifier",
-  "main": "src/worker.ts",
-  "compatibility_date": "2026-04-01",
-  "observability": {
-    "enabled": true,
-    "logs": { "head_sampling_rate": 1 }
-  },
-  "routes": [
-    { "pattern": "valcroft.claudiu.dev/*", "zone_name": "claudiu.dev" }
-  ],
-  "triggers": {
-    "crons": ["*/15 * * * *"]
-  },
-  "vars": {
-    "PAGE_URL": "https://valcroft.ro/rezervari-pescuit/",
-    "SENDER_EMAIL": "rezervari-pescuit@claudiu.dev"
-  },
-  "kv_namespaces": [
-    { "binding": "KV", "id": "94b13d58abc8487ca78eef3e9827f56c" }
-  ],
-  "send_email": [
-    { "name": "EMAIL" }
-  ]
+	"$schema": "https://unpkg.com/wrangler@latest/config-schema.json",
+	"name": "valcroft-availability-notifier",
+	"main": "src/worker.ts",
+	"compatibility_date": "2026-04-01",
+	"observability": {
+		"enabled": true,
+		"logs": {
+			"head_sampling_rate": 1
+		}
+	},
+	"custom_domains": ["valcroft.claudiu.dev"],
+	"triggers": {
+		"crons": [
+			"*/15 * * * *"
+		]
+	},
+	"vars": {
+		"PAGE_URL": "https://valcroft.ro/rezervari-pescuit/",
+		"SENDER_EMAIL": "rezervari-pescuit@claudiu.dev",
+		"SECRET_PATH": "/rezervari-pescuit"
+	},
+	"kv_namespaces": [
+		{
+			"binding": "KV",
+			"id": "94b13d58abc8487ca78eef3e9827f56c"
+		}
+	],
+	"send_email": [
+		{
+			"name": "EMAIL"
+		}
+	]
 }
