@@ -9,7 +9,9 @@
 			"head_sampling_rate": 1
 		}
 	},
-	"custom_domains": ["valcroft.claudiu.dev"],
+	"routes": [
+		{ "pattern": "valcroft.claudiu.dev", "custom_domain": true }
+	],
 	"triggers": {
 		"crons": [
 			"*/15 * * * *"
