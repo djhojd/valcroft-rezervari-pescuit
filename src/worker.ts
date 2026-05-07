@@ -1,7 +1,7 @@
 import { fetchPage } from "./fetcher";
 import { parseAvailability, type Slot } from "./parser";
 import { readWatched, writeWatched, clearWatched, readRecipients, diffSlots, slotsToStored } from "./state";
-import { sendInitialEmail, sendNewSlotsEmail, sendOccupancyEmail } from "./notify";
+import { sendInitialEmail, sendNewSlotsEmail, sendOccupancyEmail, sendExpiryEmail } from "./notify";
 import { renderWatchPage, renderConfirmPage, renderErrorPage } from "./ui";
 
 export default {
@@ -27,6 +27,14 @@ async function runScheduled(event: ScheduledController, env: Env): Promise<void>
   // Auto-expire: stop watching once 07:00 Bucharest time on the watched date has passed
   // (last cancellation window closes at 07:00 that morning).
   if (isWatchExpired(watched.date, new Date(event.scheduledTime))) {
+    const recipients = await readRecipients(env.KV);
+    if (recipients.length > 0) {
+      const results = await sendExpiryEmail(watched.date, recipients, env);
+      for (const r of results) {
+        if (r.ok) console.log(JSON.stringify({ event: "expiry_email_sent", recipient: r.recipient }));
+        else console.error(JSON.stringify({ event: "expiry_email_failed", recipient: r.recipient, error: r.error }));
+      }
+    }
     await clearWatched(env.KV);
     console.log(JSON.stringify({ event: "watched_expired", date: watched.date }));
     return;

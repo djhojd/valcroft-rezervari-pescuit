@@ -118,3 +118,15 @@ export async function sendOccupancyEmail(
 <p><a href="${env.PAGE_URL}">Rezervă acum</a></p>`;
   return sendEmailToAll(subject, body, recipients, env);
 }
+
+/** Sent when the watch auto-expires at 07:00 on the watched date. */
+export async function sendExpiryEmail(
+  date: string,
+  recipients: string[],
+  env: NotifyEnv
+): Promise<SendResult[]> {
+  const subject = `Valcroft: urmărire încheiată pentru ${formatSlotDate(date)}`;
+  const body = `<p>Urmărirea pentru <strong>${formatDateLong(date)}</strong> a fost oprită automat la 07:00 — fereastra de anulare a rezervărilor s-a închis.</p>
+<p><a href="${env.PAGE_URL}">Vezi calendarul</a></p>`;
+  return sendEmailToAll(subject, body, recipients, env);
+}
