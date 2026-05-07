@@ -10,7 +10,7 @@ declare namespace Cloudflare {
 		EMAIL: SendEmail;
 		PAGE_URL: "https://valcroft.ro/rezervari-pescuit/";
 		SENDER_EMAIL: "rezervari-pescuit@claudiu.dev";
-		WATCH_TOKEN: string;
+		WATCH_PATH: string;
 	}
 }
 interface Env extends Cloudflare.Env {}

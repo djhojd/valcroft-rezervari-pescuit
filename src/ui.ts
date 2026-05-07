@@ -7,7 +7,7 @@ function tomorrow(): string {
   return d.toISOString().slice(0, 10);
 }
 
-export function renderWatchPage(watched: WatchedState | null, token: string): string {
+export function renderWatchPage(watched: WatchedState | null, path: string): string {
   const defaultDate = watched?.date ?? tomorrow();
   const statusHtml = watched
     ? `<p>Urmărești: <strong>${formatDateLong(watched.date)}</strong><br>
@@ -33,7 +33,7 @@ export function renderWatchPage(watched: WatchedState | null, token: string): st
 <body>
   <h1>Valcroft — Urmărire disponibilitate</h1>
   ${statusHtml}
-  <form method="POST" action="/?token=${token}">
+  <form method="POST" action="${path}">
     <label>Alege o dată:
       <input type="date" name="date" value="${defaultDate}" required>
     </label>
@@ -44,24 +44,24 @@ export function renderWatchPage(watched: WatchedState | null, token: string): st
 </html>`;
 }
 
-export function renderConfirmPage(message: string, token: string): string {
+export function renderConfirmPage(message: string, path: string): string {
   return `<!DOCTYPE html>
 <html lang="ro">
 <head>
   <meta charset="utf-8">
-  <meta http-equiv="refresh" content="2;url=/?token=${token}">
+  <meta http-equiv="refresh" content="2;url=${path}">
   <title>Valcroft</title>
   <style>body{font-family:sans-serif;max-width:480px;margin:2rem auto;padding:0 1rem}</style>
 </head>
 <body>
   <p>${message}</p>
   <p><small>Redirecționare automată în 2 secunde…</small></p>
-  <p><a href="/?token=${token}">Înapoi</a></p>
+  <p><a href="${path}">Înapoi</a></p>
 </body>
 </html>`;
 }
 
-export function renderErrorPage(message: string, token: string): string {
+export function renderErrorPage(message: string, path: string): string {
   return `<!DOCTYPE html>
 <html lang="ro">
 <head>
@@ -72,7 +72,7 @@ export function renderErrorPage(message: string, token: string): string {
 <body>
   <h1>Eroare</h1>
   <p>${message}</p>
-  <p><a href="/?token=${token}">Înapoi</a></p>
+  <p><a href="${path}">Înapoi</a></p>
 </body>
 </html>`;
 }

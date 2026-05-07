@@ -102,15 +102,15 @@ async function runScheduled(event: ScheduledController, env: Env): Promise<void>
 
 async function handleFetch(request: Request, env: Env): Promise<Response> {
   const url = new URL(request.url);
-  const token = url.searchParams.get("token") ?? "";
+  const path = env.WATCH_PATH;
 
-  if (!(await tokenValid(token, env.WATCH_TOKEN))) {
-    return new Response("Forbidden", { status: 403 });
+  if (url.pathname !== path) {
+    return new Response("Not Found", { status: 404 });
   }
 
   if (request.method === "GET") {
     const watched = await readWatched(env.KV);
-    return new Response(renderWatchPage(watched, token), {
+    return new Response(renderWatchPage(watched, path), {
       headers: { "Content-Type": "text/html; charset=utf-8" },
     });
   }
@@ -128,7 +128,7 @@ async function handleFetch(request: Request, env: Env): Promise<Response> {
     if (action === "stop") {
       await clearWatched(env.KV);
       console.log(JSON.stringify({ event: "watch_stopped" }));
-      return new Response(renderConfirmPage("Urmărire oprită.", token), {
+      return new Response(renderConfirmPage("Urmărire oprită.", path), {
         headers: { "Content-Type": "text/html; charset=utf-8" },
       });
     }
@@ -136,7 +136,7 @@ async function handleFetch(request: Request, env: Env): Promise<Response> {
     if (action === "watch") {
       const date = (formData.get("date") as string | null) ?? "";
       if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
-        return new Response(renderErrorPage("Data introdusă este invalidă.", token), {
+        return new Response(renderErrorPage("Data introdusă este invalidă.", path), {
           status: 400,
           headers: { "Content-Type": "text/html; charset=utf-8" },
         });
@@ -148,7 +148,7 @@ async function handleFetch(request: Request, env: Env): Promise<Response> {
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
         console.error(JSON.stringify({ event: "watch_fetch_failed", error: msg }));
-        return new Response(renderErrorPage("Eroare la accesarea site-ului. Încearcă din nou.", token), {
+        return new Response(renderErrorPage("Eroare la accesarea site-ului. Încearcă din nou.", path), {
           status: 502,
           headers: { "Content-Type": "text/html; charset=utf-8" },
         });
@@ -160,7 +160,7 @@ async function handleFetch(request: Request, env: Env): Promise<Response> {
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
         console.error(JSON.stringify({ event: "watch_parse_failed", error: msg }));
-        return new Response(renderErrorPage("Eroare la procesarea datelor. Încearcă din nou.", token), {
+        return new Response(renderErrorPage("Eroare la procesarea datelor. Încearcă din nou.", path), {
           status: 502,
           headers: { "Content-Type": "text/html; charset=utf-8" },
         });
@@ -175,7 +175,7 @@ async function handleFetch(request: Request, env: Env): Promise<Response> {
           else console.error(JSON.stringify({ event: "initial_email_failed", recipient: r.recipient, error: r.error }));
         }
         if (results.every((r) => !r.ok)) {
-          return new Response(renderErrorPage("Eroare la trimiterea emailului. Încearcă din nou.", token), {
+          return new Response(renderErrorPage("Eroare la trimiterea emailului. Încearcă din nou.", path), {
             status: 502,
             headers: { "Content-Type": "text/html; charset=utf-8" },
           });
@@ -193,7 +193,7 @@ async function handleFetch(request: Request, env: Env): Promise<Response> {
         ? "Niciun loc disponibil momentan — vei fi notificat imediat ce apar."
         : `${count} ${count === 1 ? "loc liber" : "locuri libere"} trimis${count === 1 ? "" : "e"} pe email.`;
       console.log(JSON.stringify({ event: "watch_registered", date, slots: count }));
-      return new Response(renderConfirmPage(`Urmărire activată pentru ${date}. ${slotsText}`, token), {
+      return new Response(renderConfirmPage(`Urmărire activată pentru ${date}. ${slotsText}`, path), {
         headers: { "Content-Type": "text/html; charset=utf-8" },
       });
     }
@@ -205,15 +205,6 @@ async function handleFetch(request: Request, env: Env): Promise<Response> {
 }
 
 // ── Utilities ────────────────────────────────────────────────────────────────
-
-async function tokenValid(provided: string, secret: string): Promise<boolean> {
-  const enc = new TextEncoder();
-  const [a, b] = await Promise.all([
-    crypto.subtle.digest("SHA-256", enc.encode(provided)),
-    crypto.subtle.digest("SHA-256", enc.encode(secret)),
-  ]);
-  return crypto.subtle.timingSafeEqual(a, b);
-}
 
 function todayBucharest(now: Date): string {
   const parts = new Intl.DateTimeFormat("en-CA", {

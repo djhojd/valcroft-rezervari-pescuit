@@ -7,6 +7,9 @@
     "enabled": true,
     "logs": { "head_sampling_rate": 1 }
   },
+  "routes": [
+    { "pattern": "valcroft.claudiu.dev/*", "zone_name": "claudiu.dev" }
+  ],
   "triggers": {
     "crons": ["*/15 * * * *"]
   },
