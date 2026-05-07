@@ -1,20 +1,37 @@
 import { fetchPage } from "./fetcher";
 import { parseAvailability } from "./parser";
-import { currentWeekDates } from "./week";
-import { readSnapshot, writeSnapshot, readRecipients, diffSlots } from "./state";
-import { sendEmails } from "./notify";
+import { readWatched, writeWatched, clearWatched, readRecipients, diffSlots, slotsToStored } from "./state";
+import { sendInitialEmail, sendNewSlotsEmail, sendOccupancyEmail } from "./notify";
+import { renderWatchPage, renderConfirmPage, renderErrorPage } from "./ui";
 
 export default {
-  async scheduled(_event: ScheduledController, env: Env, ctx: ExecutionContext) {
-    ctx.waitUntil(run(env));
+  async scheduled(event: ScheduledController, env: Env, ctx: ExecutionContext) {
+    ctx.waitUntil(runScheduled(event, env));
   },
-  async fetch(): Promise<Response> {
-    return new Response("not found", { status: 404 });
+  async fetch(request: Request, env: Env): Promise<Response> {
+    return handleFetch(request, env);
   },
 } satisfies ExportedHandler<Env>;
 
-async function run(env: Env): Promise<void> {
-  const startedAt = Date.now();
+// ── Scheduled handler ────────────────────────────────────────────────────────
+
+async function runScheduled(event: ScheduledController, env: Env): Promise<void> {
+  const start = Date.now();
+
+  const watched = await readWatched(env.KV);
+  if (!watched) {
+    console.log(JSON.stringify({ event: "scheduled_noop", reason: "no_watched_date" }));
+    return;
+  }
+
+  // Auto-expire: if watched date is already in the past, clear and exit.
+  const today = todayBucharest(new Date(event.scheduledTime));
+  if (watched.date < today) {
+    await clearWatched(env.KV);
+    console.log(JSON.stringify({ event: "watched_expired", date: watched.date }));
+    return;
+  }
+
   let html: string;
   try {
     html = await fetchPage(env.PAGE_URL);
@@ -28,42 +45,158 @@ async function run(env: Env): Promise<void> {
     console.error(JSON.stringify({ event: "parse_zero_slots", note: "site format may have changed; not touching KV" }));
     return;
   }
-  const week = new Set(currentWeekDates(new Date()));
-  const weekSlots = allSlots.filter((s) => week.has(s.date));
-  console.log(JSON.stringify({ event: "parsed", parsed: allSlots.length, weekSlots: weekSlots.length }));
 
-  const previous = await readSnapshot(env.KV);
-  const newlyAvailable = diffSlots(weekSlots, previous);
-  console.log(JSON.stringify({ event: "diffed", previous: previous.length, newly: newlyAvailable.length }));
-
-  if (newlyAvailable.length === 0) {
-    await writeSnapshot(env.KV, weekSlots);
-    console.log(JSON.stringify({ event: "done", durationMs: Date.now() - startedAt, notified: false }));
-    return;
-  }
-
+  const dateSlots = allSlots.filter((s) => s.date === watched.date);
   const recipients = await readRecipients(env.KV);
-  if (recipients.length === 0) {
-    console.error(JSON.stringify({ event: "no_recipients", note: "skipping email; writing snapshot anyway" }));
-    await writeSnapshot(env.KV, weekSlots);
-    return;
+  const isHourly = new Date(event.scheduledTime).getUTCMinutes() === 0;
+
+  console.log(JSON.stringify({ event: "parsed", date: watched.date, slots: dateSlots.length, isHourly }));
+
+  // ── 15-min edge diff: notify if new slots appeared ────────────────────────
+  const newSlots = diffSlots(dateSlots, watched.snap15);
+  let newSlotSendFailed = false;
+  if (newSlots.length > 0 && recipients.length > 0) {
+    const results = await sendNewSlotsEmail(watched.date, newSlots, recipients, env);
+    for (const r of results) {
+      if (r.ok) console.log(JSON.stringify({ event: "new_slots_sent", recipient: r.recipient }));
+      else console.error(JSON.stringify({ event: "new_slots_send_failed", recipient: r.recipient, error: r.error }));
+    }
+    newSlotSendFailed = results.every((r) => !r.ok);
   }
 
-  const results = await sendEmails(newlyAvailable, recipients, {
-    EMAIL: env.EMAIL,
-    SENDER_EMAIL: env.SENDER_EMAIL,
-    PAGE_URL: env.PAGE_URL,
-  });
-  for (const r of results) {
-    if (r.ok) console.log(JSON.stringify({ event: "sent", recipient: r.recipient }));
-    else console.error(JSON.stringify({ event: "send_failed", recipient: r.recipient, error: r.error }));
+  // ── Hourly: notify if slot count decreased ────────────────────────────────
+  let occupancySendFailed = false;
+  if (isHourly && dateSlots.length < watched.countHourly && recipients.length > 0) {
+    const taken = watched.countHourly - dateSlots.length;
+    const results = await sendOccupancyEmail(watched.date, dateSlots.length, taken, recipients, env);
+    for (const r of results) {
+      if (r.ok) console.log(JSON.stringify({ event: "occupancy_sent", recipient: r.recipient }));
+      else console.error(JSON.stringify({ event: "occupancy_send_failed", recipient: r.recipient, error: r.error }));
+    }
+    occupancySendFailed = results.every((r) => !r.ok);
   }
 
-  const allFailed = results.every((r) => !r.ok);
-  if (allFailed) {
-    console.error(JSON.stringify({ event: "all_sends_failed", note: "not writing snapshot, will retry next tick" }));
-    return;
+  // ── Update KV state ───────────────────────────────────────────────────────
+  // At-least-once: if new-slot email failed, keep old snap15 so it retries next tick.
+  const newSnap15 = (newSlots.length > 0 && newSlotSendFailed)
+    ? watched.snap15
+    : slotsToStored(dateSlots);
+
+  // Hourly baseline: always reset at :00 unless the occupancy email failed
+  // (retry the decrease notification next hour).
+  const newCountHourly = isHourly
+    ? (occupancySendFailed ? watched.countHourly : dateSlots.length)
+    : watched.countHourly;
+
+  await writeWatched(env.KV, { date: watched.date, snap15: newSnap15, countHourly: newCountHourly });
+  console.log(JSON.stringify({ event: "done", durationMs: Date.now() - start, date: watched.date }));
+}
+
+// ── HTTP handler (web UI) ────────────────────────────────────────────────────
+
+async function handleFetch(request: Request, env: Env): Promise<Response> {
+  const url = new URL(request.url);
+  const token = url.searchParams.get("token") ?? "";
+
+  if (token !== env.WATCH_TOKEN) {
+    return new Response("Forbidden", { status: 403 });
   }
-  await writeSnapshot(env.KV, weekSlots);
-  console.log(JSON.stringify({ event: "done", durationMs: Date.now() - startedAt, notified: true }));
+
+  if (request.method === "GET") {
+    const watched = await readWatched(env.KV);
+    return new Response(renderWatchPage(watched, token), {
+      headers: { "Content-Type": "text/html; charset=utf-8" },
+    });
+  }
+
+  if (request.method === "POST") {
+    let formData: FormData;
+    try {
+      formData = await request.formData();
+    } catch {
+      return new Response("Bad Request", { status: 400 });
+    }
+
+    const action = formData.get("action");
+
+    if (action === "stop") {
+      await clearWatched(env.KV);
+      console.log(JSON.stringify({ event: "watch_stopped" }));
+      return new Response(renderConfirmPage("Urmărire oprită.", token), {
+        headers: { "Content-Type": "text/html; charset=utf-8" },
+      });
+    }
+
+    if (action === "watch") {
+      const date = (formData.get("date") as string | null) ?? "";
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+        return new Response(renderErrorPage("Data introdusă este invalidă.", token), {
+          status: 400,
+          headers: { "Content-Type": "text/html; charset=utf-8" },
+        });
+      }
+
+      let html: string;
+      try {
+        html = await fetchPage(env.PAGE_URL);
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        console.error(JSON.stringify({ event: "watch_fetch_failed", error: msg }));
+        return new Response(renderErrorPage("Eroare la accesarea site-ului. Încearcă din nou.", token), {
+          status: 502,
+          headers: { "Content-Type": "text/html; charset=utf-8" },
+        });
+      }
+
+      const allSlots = await parseAvailability(html);
+      const dateSlots = allSlots.filter((s) => s.date === date);
+      const recipients = await readRecipients(env.KV);
+
+      if (recipients.length > 0) {
+        const results = await sendInitialEmail(date, dateSlots, recipients, env);
+        for (const r of results) {
+          if (r.ok) console.log(JSON.stringify({ event: "initial_email_sent", recipient: r.recipient }));
+          else console.error(JSON.stringify({ event: "initial_email_failed", recipient: r.recipient, error: r.error }));
+        }
+        if (results.every((r) => !r.ok)) {
+          return new Response(renderErrorPage("Eroare la trimiterea emailului. Încearcă din nou.", token), {
+            status: 502,
+            headers: { "Content-Type": "text/html; charset=utf-8" },
+          });
+        }
+      }
+
+      await writeWatched(env.KV, {
+        date,
+        snap15: slotsToStored(dateSlots),
+        countHourly: dateSlots.length,
+      });
+
+      const count = dateSlots.length;
+      const slotsText = count === 0
+        ? "Niciun loc disponibil momentan — vei fi notificat imediat ce apar."
+        : `${count} ${count === 1 ? "loc liber" : "locuri libere"} trimis${count === 1 ? "" : "e"} pe email.`;
+      console.log(JSON.stringify({ event: "watch_registered", date, slots: count }));
+      return new Response(renderConfirmPage(`Urmărire activată pentru ${date}. ${slotsText}`, token), {
+        headers: { "Content-Type": "text/html; charset=utf-8" },
+      });
+    }
+
+    return new Response("Bad Request", { status: 400 });
+  }
+
+  return new Response("Method Not Allowed", { status: 405 });
+}
+
+// ── Utilities ────────────────────────────────────────────────────────────────
+
+function todayBucharest(now: Date): string {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Europe/Bucharest",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(now);
+  const p = Object.fromEntries(parts.map((x) => [x.type, x.value]));
+  return `${p.year}-${p.month}-${p.day}`;
 }
