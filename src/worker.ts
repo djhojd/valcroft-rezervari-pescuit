@@ -24,9 +24,9 @@ async function runScheduled(event: ScheduledController, env: Env): Promise<void>
     return;
   }
 
-  // Auto-expire: if watched date is already in the past, clear and exit.
-  const today = todayBucharest(new Date(event.scheduledTime));
-  if (watched.date < today) {
+  // Auto-expire: stop watching once 07:00 Bucharest time on the watched date has passed
+  // (last cancellation window closes at 07:00 that morning).
+  if (isWatchExpired(watched.date, new Date(event.scheduledTime))) {
     await clearWatched(env.KV);
     console.log(JSON.stringify({ event: "watched_expired", date: watched.date }));
     return;
@@ -206,13 +206,17 @@ async function handleFetch(request: Request, env: Env): Promise<Response> {
 
 // ── Utilities ────────────────────────────────────────────────────────────────
 
-function todayBucharest(now: Date): string {
+function isWatchExpired(watchedDate: string, now: Date): boolean {
   const parts = new Intl.DateTimeFormat("en-CA", {
     timeZone: "Europe/Bucharest",
     year: "numeric",
     month: "2-digit",
     day: "2-digit",
+    hour: "2-digit",
+    hour12: false,
   }).formatToParts(now);
   const p = Object.fromEntries(parts.map((x) => [x.type, x.value]));
-  return `${p.year}-${p.month}-${p.day}`;
+  const todayStr = `${p.year}-${p.month}-${p.day}`;
+  const currentHour = parseInt(p.hour, 10);
+  return watchedDate < todayStr || (watchedDate === todayStr && currentHour >= 7);
 }
