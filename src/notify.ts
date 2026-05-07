@@ -8,16 +8,27 @@ export type NotifyEnv = {
   PAGE_URL: string;
 };
 
+type SendResult = { recipient: string; ok: boolean; error?: string };
+
 const RO_WEEKDAY = ["dum", "lun", "mar", "mie", "joi", "vin", "sâm"];
 const RO_MONTH_SHORT = ["ian", "feb", "mar", "apr", "mai", "iun", "iul", "aug", "sep", "oct", "noi", "dec"];
+const RO_MONTH_LONG  = ["ianuarie", "februarie", "martie", "aprilie", "mai", "iunie",
+                        "iulie", "august", "septembrie", "octombrie", "noiembrie", "decembrie"];
 
-function formatDate(iso: string): string {
+function formatSlotDate(iso: string): string {
   const [y, m, d] = iso.split("-").map(Number);
   const wd = new Date(Date.UTC(y, m - 1, d)).getUTCDay();
   return `${RO_WEEKDAY[wd]} ${d} ${RO_MONTH_SHORT[m - 1]}`;
 }
 
-function buildHtml(slots: Slot[], pageUrl: string): string {
+export function formatDateLong(iso: string): string {
+  const [y, m, d] = iso.split("-").map(Number);
+  const wd = new Date(Date.UTC(y, m - 1, d)).getUTCDay();
+  const weekdays = ["duminică", "luni", "marți", "miercuri", "joi", "vineri", "sâmbătă"];
+  return `${weekdays[wd]}, ${d} ${RO_MONTH_LONG[m - 1]} ${y}`;
+}
+
+function buildSlotList(slots: Slot[], pageUrl: string): string {
   const groups = new Map<string, string[]>();
   for (const s of slots) {
     const arr = groups.get(s.pontoon) ?? [];
@@ -29,24 +40,22 @@ function buildHtml(slots: Slot[], pageUrl: string): string {
     const nb = parseInt(b.replace(/\D+/g, ""), 10) || 0;
     return na - nb;
   });
-  const items = sortedPontoons.map((p) => {
-    const dates = groups.get(p)!.sort().map(formatDate).join(", ");
-    return `<li><strong>${p}</strong> — ${dates}</li>`;
-  }).join("");
-  return `<p>Locuri noi disponibile săptămâna aceasta:</p>
-<ul>${items}</ul>
-<p><a href="${pageUrl}">Rezervă acum</a></p>`;
+  const items = sortedPontoons
+    .map((p) => {
+      const dates = groups.get(p)!.sort().map(formatSlotDate).join(", ");
+      return `<li><strong>${p}</strong> — ${dates}</li>`;
+    })
+    .join("");
+  return `<ul>${items}</ul><p><a href="${pageUrl}">Rezervă acum</a></p>`;
 }
 
-export async function sendEmails(
-  slots: Slot[],
+async function sendEmailToAll(
+  subject: string,
+  html: string,
   recipients: string[],
   env: NotifyEnv
-): Promise<{ recipient: string; ok: boolean; error?: string }[]> {
-  const subject = `Valcroft: ${slots.length} ${slots.length === 1 ? "loc nou" : "locuri noi"} săptămâna aceasta`;
-  const html = buildHtml(slots, env.PAGE_URL);
-  const results: { recipient: string; ok: boolean; error?: string }[] = [];
-
+): Promise<SendResult[]> {
+  const results: SendResult[] = [];
   for (const recipient of recipients) {
     try {
       const msg = createMimeMessage();
@@ -62,4 +71,48 @@ export async function sendEmails(
     }
   }
   return results;
+}
+
+/** Sent immediately when user registers a watched date. Lists all current free slots. */
+export async function sendInitialEmail(
+  date: string,
+  slots: Slot[],
+  recipients: string[],
+  env: NotifyEnv
+): Promise<SendResult[]> {
+  const dateLabel = formatDateLong(date);
+  const count = slots.length;
+  const subject = `Valcroft: urmărire activată pentru ${formatSlotDate(date)} — ${count} ${count === 1 ? "loc liber" : "locuri libere"}`;
+  const body = count === 0
+    ? `<p>Niciun loc disponibil momentan pe <strong>${dateLabel}</strong>. Vei fi notificat imediat ce apar locuri libere.</p><p><a href="${env.PAGE_URL}">Vezi calendarul</a></p>`
+    : `<p>Locuri disponibile pe <strong>${dateLabel}</strong>:</p>${buildSlotList(slots, env.PAGE_URL)}`;
+  return sendEmailToAll(subject, body, recipients, env);
+}
+
+/** Sent every 15 min when new slots have opened since last check. */
+export async function sendNewSlotsEmail(
+  date: string,
+  newSlots: Slot[],
+  recipients: string[],
+  env: NotifyEnv
+): Promise<SendResult[]> {
+  const count = newSlots.length;
+  const subject = `Valcroft: ${count} ${count === 1 ? "loc nou" : "locuri noi"} pe ${formatSlotDate(date)}`;
+  const body = `<p>Locuri noi disponibile pe <strong>${formatDateLong(date)}</strong>:</p>${buildSlotList(newSlots, env.PAGE_URL)}`;
+  return sendEmailToAll(subject, body, recipients, env);
+}
+
+/** Sent every hour when the total free count has decreased since the previous hour. */
+export async function sendOccupancyEmail(
+  date: string,
+  remaining: number,
+  taken: number,
+  recipients: string[],
+  env: NotifyEnv
+): Promise<SendResult[]> {
+  const subject = `Valcroft: ${remaining} ${remaining === 1 ? "loc rămas" : "locuri rămase"} pe ${formatSlotDate(date)}`;
+  const body = `<p>Pe <strong>${formatDateLong(date)}</strong>: <strong>${remaining}</strong> ${remaining === 1 ? "loc liber" : "locuri libere"} rămase.</p>
+<p>${taken} ${taken === 1 ? "a fost rezervat" : "au fost rezervate"} în ultima oră.</p>
+<p><a href="${env.PAGE_URL}">Rezervă acum</a></p>`;
+  return sendEmailToAll(subject, body, recipients, env);
 }
