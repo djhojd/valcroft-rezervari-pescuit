@@ -23,7 +23,7 @@ export function renderWatchPage(watched: WatchedState | null, path: string): str
 <body>
   <h1>Valcroft — Urmărire disponibilitate</h1>
   <p>Urmărești: <strong>${formatDateLong(watched.date)}</strong><br>
-  Verificare la fiecare 15 minute.</p>
+  Verificare la fiecare 15 minute, până la 07:00 în acea zi.</p>
   <form method="POST" action="${path}">
     <button type="submit" name="action" value="stop" style="background:#c0392b;color:#fff">Oprește urmărirea</button>
   </form>
