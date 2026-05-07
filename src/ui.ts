@@ -8,14 +8,28 @@ function tomorrow(): string {
 }
 
 export function renderWatchPage(watched: WatchedState | null, path: string): string {
-  const defaultDate = watched?.date ?? tomorrow();
-  const statusHtml = watched
-    ? `<p>Urmărești: <strong>${formatDateLong(watched.date)}</strong><br>
-       Verificare la fiecare 15 minute.</p>`
-    : `<p>Nicio dată urmărită momentan.</p>`;
-  const stopButton = watched
-    ? `<button type="submit" name="action" value="stop" style="background:#c0392b;color:#fff">Oprește urmărirea</button>`
-    : "";
+  if (watched) {
+    return `<!DOCTYPE html>
+<html lang="ro">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Valcroft — Urmărire disponibilitate</title>
+  <style>
+    body { font-family: sans-serif; max-width: 480px; margin: 2rem auto; padding: 0 1rem; }
+    button { padding: .5rem 1.2rem; font-size: 1rem; cursor: pointer; }
+  </style>
+</head>
+<body>
+  <h1>Valcroft — Urmărire disponibilitate</h1>
+  <p>Urmărești: <strong>${formatDateLong(watched.date)}</strong><br>
+  Verificare la fiecare 15 minute.</p>
+  <form method="POST" action="${path}">
+    <button type="submit" name="action" value="stop" style="background:#c0392b;color:#fff">Oprește urmărirea</button>
+  </form>
+</body>
+</html>`;
+  }
 
   return `<!DOCTYPE html>
 <html lang="ro">
@@ -27,18 +41,17 @@ export function renderWatchPage(watched: WatchedState | null, path: string): str
     body { font-family: sans-serif; max-width: 480px; margin: 2rem auto; padding: 0 1rem; }
     label { display: block; margin-bottom: .5rem; }
     input[type=date] { font-size: 1rem; padding: .3rem; margin-top: .25rem; }
-    button { padding: .5rem 1.2rem; font-size: 1rem; cursor: pointer; margin-right: .5rem; }
+    button { padding: .5rem 1.2rem; font-size: 1rem; cursor: pointer; }
   </style>
 </head>
 <body>
   <h1>Valcroft — Urmărire disponibilitate</h1>
-  ${statusHtml}
+  <p>Nicio dată urmărită momentan.</p>
   <form method="POST" action="${path}">
     <label>Alege o dată:
-      <input type="date" name="date" value="${defaultDate}" required>
-    </label>
+      <input type="date" name="date" value="${tomorrow()}" required>
+    </label><br><br>
     <button type="submit" name="action" value="watch">Urmărește această dată</button>
-    ${stopButton}
   </form>
 </body>
 </html>`;
