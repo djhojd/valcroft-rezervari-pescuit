@@ -1,7 +1,7 @@
 import { fetchPage } from "./fetcher";
 import { parseAvailability, type Slot } from "./parser";
 import { readWatched, writeWatched, clearWatched, readRecipients, diffSlots, slotsToStored } from "./state";
-import { sendInitialEmail, sendNewSlotsEmail, sendOccupancyEmail, sendExpiryEmail, sendManualStopEmail } from "./notify";
+import { sendInitialEmail, sendNewSlotsEmail, sendOccupancyEmail, sendExpiryEmail, sendManualStopEmail, sendDailyReportEmail } from "./notify";
 import { renderWatchPage, renderConfirmPage, renderErrorPage } from "./ui";
 
 export default {
@@ -66,6 +66,31 @@ async function runScheduled(event: ScheduledController, env: Env): Promise<void>
 
   console.log(JSON.stringify({ event: "parsed", date: watched.date, slots: dateSlots.length, isHourly }));
 
+  // ── Daily report at 19:00 Bucharest ───────────────────────────────────────
+  let dailySendFailed = false;
+  let dailyDidSend = false;
+  if (isDailyReportTick(new Date(event.scheduledTime)) && recipients.length > 0) {
+    const seen = new Set(dateSlots.map((s) => `${s.calId}:${s.date}`));
+    const booked = watched.snapDaily.filter((s) => !seen.has(`${s.calId}:${s.date}`));
+    const added = diffSlots(dateSlots, watched.snapDaily);
+    const isFirst = watched.snapDaily.length === 0;
+    const results = await sendDailyReportEmail(
+      watched.date,
+      isFirst ? dateSlots : added,
+      booked,
+      dateSlots.length,
+      isFirst,
+      recipients,
+      env
+    );
+    for (const r of results) {
+      if (r.ok) console.log(JSON.stringify({ event: "daily_report_sent", recipient: r.recipient }));
+      else console.error(JSON.stringify({ event: "daily_report_failed", recipient: r.recipient, error: r.error }));
+    }
+    dailySendFailed = results.every((r) => !r.ok);
+    dailyDidSend = true;
+  }
+
   // ── 15-min edge diff: notify if new slots appeared ────────────────────────
   const newSlots = diffSlots(dateSlots, watched.snap15);
   let newSlotSendFailed = false;
@@ -102,11 +127,14 @@ async function runScheduled(event: ScheduledController, env: Env): Promise<void>
     ? (occupancySendFailed ? watched.countHourly : dateSlots.length)
     : watched.countHourly;
 
+  const newSnapDaily = (dailyDidSend && !dailySendFailed)
+    ? dateSlots
+    : watched.snapDaily;
   await writeWatched(env.KV, {
     date: watched.date,
     snap15: newSnap15,
     countHourly: newCountHourly,
-    snapDaily: watched.snapDaily,
+    snapDaily: newSnapDaily,
   });
   console.log(JSON.stringify({ event: "done", durationMs: Date.now() - start, date: watched.date }));
 }
@@ -244,4 +272,15 @@ function isWatchExpired(watchedDate: string, now: Date): boolean {
   const todayStr = `${p.year}-${p.month}-${p.day}`;
   const currentHour = parseInt(p.hour, 10);
   return watchedDate < todayStr || (watchedDate === todayStr && currentHour >= 7);
+}
+
+function isDailyReportTick(now: Date): boolean {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Europe/Bucharest",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).formatToParts(now);
+  const p = Object.fromEntries(parts.map((x) => [x.type, x.value]));
+  return parseInt(p.hour, 10) === 19 && parseInt(p.minute, 10) === 0;
 }
