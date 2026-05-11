@@ -148,27 +148,28 @@ export async function sendDailyReportEmail(
   date: string,
   added: Slot[],
   booked: Slot[],
-  currentTotal: number,
+  currentSlots: Slot[],
   isFirst: boolean,
   recipients: string[],
   env: NotifyEnv
 ): Promise<SendResult[]> {
   const dateLabel = formatDateLong(date);
   const calendarLink = `<p><a href="${env.PAGE_URL}">Vezi calendarul</a></p>`;
+  const currentTotal = currentSlots.length;
+  const freeNowSection = currentTotal > 0
+    ? `<p><strong>Locuri libere acum (${currentTotal}):</strong></p>${buildSlotList(currentSlots, env.PAGE_URL)}`
+    : `<p><strong>Niciun loc liber acum.</strong></p>${calendarLink}`;
 
   if (isFirst) {
     const subject = `Valcroft: urmărire pornită pentru ${formatSlotDate(date)} — ${currentTotal} ${currentTotal === 1 ? "loc liber" : "locuri libere"}`;
-    const body = currentTotal === 0
-      ? `<p>Urmărire pornită pentru <strong>${dateLabel}</strong>. Niciun loc liber momentan.</p>${calendarLink}`
-      : `<p>Urmărire pornită pentru <strong>${dateLabel}</strong>. Situație curentă:</p>${buildSlotList(added, env.PAGE_URL)}`;
+    const body = `<p>Urmărire pornită pentru <strong>${dateLabel}</strong>.</p>${freeNowSection}`;
     return sendEmailToAll(subject, body, recipients, env);
   }
 
   const subject = `Valcroft: raport zilnic pentru ${formatSlotDate(date)} — +${added.length} / -${booked.length}`;
 
   if (added.length === 0 && booked.length === 0) {
-    const body = `<p>Nicio modificare în ultimele 24 de ore pentru <strong>${dateLabel}</strong>.</p>
-<p><strong>${currentTotal}</strong> ${currentTotal === 1 ? "loc liber" : "locuri libere"} acum.</p>${calendarLink}`;
+    const body = `<p>Nicio modificare în ultimele 24 de ore pentru <strong>${dateLabel}</strong>.</p>${freeNowSection}`;
     return sendEmailToAll(subject, body, recipients, env);
   }
 
@@ -178,7 +179,6 @@ export async function sendDailyReportEmail(
   const bookedSection = booked.length > 0
     ? `<p><strong>Locuri rezervate (${booked.length}):</strong></p>${buildSlotList(booked, env.PAGE_URL)}`
     : "";
-  const totalLine = `<p><strong>${currentTotal}</strong> ${currentTotal === 1 ? "loc liber" : "locuri libere"} acum pe <strong>${dateLabel}</strong>.</p>`;
-  const body = `${addedSection}${bookedSection}${totalLine}${calendarLink}`;
+  const body = `<p>Raport zilnic pentru <strong>${dateLabel}</strong>:</p>${addedSection}${bookedSection}${freeNowSection}`;
   return sendEmailToAll(subject, body, recipients, env);
 }

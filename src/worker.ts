@@ -76,9 +76,9 @@ async function runScheduled(event: ScheduledController, env: Env): Promise<void>
     const isFirst = watched.snapDaily.length === 0;
     const results = await sendDailyReportEmail(
       watched.date,
-      isFirst ? dateSlots : added,
+      added,
       booked,
-      dateSlots.length,
+      dateSlots,
       isFirst,
       recipients,
       env
