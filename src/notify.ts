@@ -142,3 +142,43 @@ export async function sendExpiryEmail(
 <p><a href="${env.PAGE_URL}">Vezi calendarul</a></p>`;
   return sendEmailToAll(subject, body, recipients, env);
 }
+
+/** Sent daily at 19:00 Bucharest. Summarises slots opened/booked in the last 24h. */
+export async function sendDailyReportEmail(
+  date: string,
+  added: Slot[],
+  booked: Slot[],
+  currentTotal: number,
+  isFirst: boolean,
+  recipients: string[],
+  env: NotifyEnv
+): Promise<SendResult[]> {
+  const dateLabel = formatDateLong(date);
+  const calendarLink = `<p><a href="${env.PAGE_URL}">Vezi calendarul</a></p>`;
+
+  if (isFirst) {
+    const subject = `Valcroft: urmărire pornită pentru ${formatSlotDate(date)} — ${currentTotal} ${currentTotal === 1 ? "loc liber" : "locuri libere"}`;
+    const body = currentTotal === 0
+      ? `<p>Urmărire pornită pentru <strong>${dateLabel}</strong>. Niciun loc liber momentan.</p>${calendarLink}`
+      : `<p>Urmărire pornită pentru <strong>${dateLabel}</strong>. Situație curentă:</p>${buildSlotList(added, env.PAGE_URL)}`;
+    return sendEmailToAll(subject, body, recipients, env);
+  }
+
+  const subject = `Valcroft: raport zilnic pentru ${formatSlotDate(date)} — +${added.length} / -${booked.length}`;
+
+  if (added.length === 0 && booked.length === 0) {
+    const body = `<p>Nicio modificare în ultimele 24 de ore pentru <strong>${dateLabel}</strong>.</p>
+<p><strong>${currentTotal}</strong> ${currentTotal === 1 ? "loc liber" : "locuri libere"} acum.</p>${calendarLink}`;
+    return sendEmailToAll(subject, body, recipients, env);
+  }
+
+  const addedSection = added.length > 0
+    ? `<p><strong>Locuri eliberate (${added.length}):</strong></p>${buildSlotList(added, env.PAGE_URL)}`
+    : "";
+  const bookedSection = booked.length > 0
+    ? `<p><strong>Locuri rezervate (${booked.length}):</strong></p>${buildSlotList(booked, env.PAGE_URL)}`
+    : "";
+  const totalLine = `<p><strong>${currentTotal}</strong> ${currentTotal === 1 ? "loc liber" : "locuri libere"} acum pe <strong>${dateLabel}</strong>.</p>`;
+  const body = `${addedSection}${bookedSection}${totalLine}${calendarLink}`;
+  return sendEmailToAll(subject, body, recipients, env);
+}
