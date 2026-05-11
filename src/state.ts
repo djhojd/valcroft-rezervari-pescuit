@@ -6,12 +6,21 @@ export type WatchedState = {
   date: string;       // YYYY-MM-DD (Bucharest local date)
   snap15: StoredSlot[]; // slots at last 15-min tick; basis for edge diff
   countHourly: number;  // slot count at last :00 tick; basis for decrease detection
+  snapDaily: Slot[];   // slots at last daily snapshot; basis for 19:00 daily report
 };
 
 export async function readWatched(kv: KVNamespace): Promise<WatchedState | null> {
   try {
     const raw = await kv.get("watched", "json");
-    if (raw && typeof (raw as WatchedState).date === "string") return raw as WatchedState;
+    if (raw && typeof (raw as WatchedState).date === "string") {
+      const w = raw as Partial<WatchedState> & { date: string; snap15: StoredSlot[]; countHourly: number };
+      return {
+        date: w.date,
+        snap15: w.snap15,
+        countHourly: w.countHourly,
+        snapDaily: Array.isArray(w.snapDaily) ? w.snapDaily : [],
+      };
+    }
     return null;
   } catch {
     return null;

@@ -102,7 +102,12 @@ async function runScheduled(event: ScheduledController, env: Env): Promise<void>
     ? (occupancySendFailed ? watched.countHourly : dateSlots.length)
     : watched.countHourly;
 
-  await writeWatched(env.KV, { date: watched.date, snap15: newSnap15, countHourly: newCountHourly });
+  await writeWatched(env.KV, {
+    date: watched.date,
+    snap15: newSnap15,
+    countHourly: newCountHourly,
+    snapDaily: watched.snapDaily,
+  });
   console.log(JSON.stringify({ event: "done", durationMs: Date.now() - start, date: watched.date }));
 }
 
@@ -205,6 +210,7 @@ async function handleFetch(request: Request, env: Env): Promise<Response> {
         date,
         snap15: slotsToStored(dateSlots),
         countHourly: dateSlots.length,
+        snapDaily: [],
       });
 
       const count = dateSlots.length;
