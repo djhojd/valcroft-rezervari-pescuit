@@ -2,37 +2,64 @@ import type { Slot } from "./parser";
 
 export type StoredSlot = { calId: string; date: string };
 
-export type WatchedState = {
-  date: string;       // YYYY-MM-DD (Bucharest local date)
+export type WatchedDate = {
+  date: string;         // YYYY-MM-DD (Bucharest local date)
   snap15: StoredSlot[]; // slots at last 15-min tick; basis for edge diff
   countHourly: number;  // slot count at last :00 tick; basis for decrease detection
-  snapDaily: Slot[];   // slots at last daily snapshot; basis for 19:00 daily report
+  snapDaily: Slot[];    // slots at last 19:00 tick; basis for daily report diff
 };
 
-export async function readWatched(kv: KVNamespace): Promise<WatchedState | null> {
+function isWatchedDate(x: unknown): x is WatchedDate {
+  if (!x || typeof x !== "object") return false;
+  const w = x as Record<string, unknown>;
+  return typeof w.date === "string"
+    && Array.isArray(w.snap15)
+    && typeof w.countHourly === "number";
+}
+
+function normalize(entry: Partial<WatchedDate> & { date: string; snap15: StoredSlot[]; countHourly: number }): WatchedDate {
+  return {
+    date: entry.date,
+    snap15: entry.snap15,
+    countHourly: entry.countHourly,
+    snapDaily: Array.isArray(entry.snapDaily) ? entry.snapDaily : [],
+  };
+}
+
+export async function readWatched(kv: KVNamespace): Promise<WatchedDate[]> {
   try {
     const raw = await kv.get("watched", "json");
-    if (raw && typeof (raw as WatchedState).date === "string") {
-      const w = raw as Partial<WatchedState> & { date: string; snap15: StoredSlot[]; countHourly: number };
-      return {
-        date: w.date,
-        snap15: w.snap15,
-        countHourly: w.countHourly,
-        snapDaily: Array.isArray(w.snapDaily) ? w.snapDaily : [],
-      };
+    if (Array.isArray(raw)) {
+      return raw.filter(isWatchedDate).map((e) => normalize(e));
     }
-    return null;
+    if (isWatchedDate(raw)) {
+      // Legacy single-object record from the pre-multi-date version. Wrap as a one-entry list.
+      return [normalize(raw)];
+    }
+    return [];
   } catch {
-    return null;
+    return [];
   }
 }
 
-export async function writeWatched(kv: KVNamespace, state: WatchedState): Promise<void> {
-  await kv.put("watched", JSON.stringify(state));
+export async function writeWatched(kv: KVNamespace, list: WatchedDate[]): Promise<void> {
+  await kv.put("watched", JSON.stringify(list));
 }
 
-export async function clearWatched(kv: KVNamespace): Promise<void> {
-  await kv.delete("watched");
+export async function addWatchedDate(kv: KVNamespace, entry: WatchedDate): Promise<boolean> {
+  const list = await readWatched(kv);
+  if (list.some((w) => w.date === entry.date)) return false;
+  list.push(entry);
+  await writeWatched(kv, list);
+  return true;
+}
+
+export async function removeWatchedDate(kv: KVNamespace, date: string): Promise<boolean> {
+  const list = await readWatched(kv);
+  const next = list.filter((w) => w.date !== date);
+  if (next.length === list.length) return false;
+  await writeWatched(kv, next);
+  return true;
 }
 
 export async function readRecipients(kv: KVNamespace): Promise<string[]> {

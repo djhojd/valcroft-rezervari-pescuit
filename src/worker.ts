@@ -1,6 +1,10 @@
 import { fetchPage } from "./fetcher";
 import { parseAvailability, type Slot } from "./parser";
-import { readWatched, writeWatched, clearWatched, readRecipients, diffSlots, slotsToStored } from "./state";
+import {
+  readWatched, writeWatched, addWatchedDate, removeWatchedDate,
+  readRecipients, diffSlots, slotsToStored,
+  type WatchedDate,
+} from "./state";
 import { sendInitialEmail, sendNewSlotsEmail, sendOccupancyEmail, sendExpiryEmail, sendManualStopEmail, sendDailyReportEmail } from "./notify";
 import { renderWatchPage, renderConfirmPage, renderErrorPage } from "./ui";
 
@@ -17,34 +21,46 @@ export default {
 
 async function runScheduled(event: ScheduledController, env: Env): Promise<void> {
   const start = Date.now();
+  const now = new Date(event.scheduledTime);
 
-  const watched = await readWatched(env.KV);
-  if (!watched) {
-    console.log(JSON.stringify({ event: "scheduled_noop", reason: "no_watched_date" }));
+  const list = await readWatched(env.KV);
+  if (list.length === 0) {
+    console.log(JSON.stringify({ event: "scheduled_noop", reason: "no_watched_dates" }));
     return;
   }
 
-  // Auto-expire: stop watching once 07:00 Bucharest time on the watched date has passed
-  // (last cancellation window closes at 07:00 that morning).
-  if (isWatchExpired(watched.date, new Date(event.scheduledTime))) {
-    const recipients = await readRecipients(env.KV);
+  const expired = list.filter((w) => isWatchExpired(w.date, now));
+  const active = list.filter((w) => !isWatchExpired(w.date, now));
+
+  const recipients = await readRecipients(env.KV);
+
+  // Send expiry emails for any dates that have passed 07:00.
+  for (const w of expired) {
     if (recipients.length > 0) {
-      const results = await sendExpiryEmail(watched.date, recipients, env);
+      const results = await sendExpiryEmail(w.date, recipients, env);
       for (const r of results) {
-        if (r.ok) console.log(JSON.stringify({ event: "expiry_email_sent", recipient: r.recipient }));
-        else console.error(JSON.stringify({ event: "expiry_email_failed", recipient: r.recipient, error: r.error }));
+        if (r.ok) console.log(JSON.stringify({ event: "expiry_email_sent", date: w.date, recipient: r.recipient }));
+        else console.error(JSON.stringify({ event: "expiry_email_failed", date: w.date, recipient: r.recipient, error: r.error }));
       }
     }
-    await clearWatched(env.KV);
-    console.log(JSON.stringify({ event: "watched_expired", date: watched.date }));
+    console.log(JSON.stringify({ event: "watched_expired", date: w.date }));
+  }
+
+  // Nothing more to do if no active watches remain.
+  if (active.length === 0) {
+    await writeWatched(env.KV, []);
+    console.log(JSON.stringify({ event: "done", durationMs: Date.now() - start, active: 0, expired: expired.length }));
     return;
   }
 
+  // One fetch + parse covers every watched date.
   let html: string;
   try {
     html = await fetchPage(env.PAGE_URL);
   } catch (e) {
     console.error(JSON.stringify({ event: "fetch_failed", error: e instanceof Error ? e.message : String(e) }));
+    // Persist removal of expired entries even if fetch fails.
+    if (expired.length > 0) await writeWatched(env.KV, active);
     return;
   }
 
@@ -53,90 +69,79 @@ async function runScheduled(event: ScheduledController, env: Env): Promise<void>
     allSlots = await parseAvailability(html);
   } catch (e) {
     console.error(JSON.stringify({ event: "parse_failed", error: e instanceof Error ? e.message : String(e) }));
+    if (expired.length > 0) await writeWatched(env.KV, active);
     return;
   }
   if (allSlots.length === 0) {
-    console.error(JSON.stringify({ event: "parse_zero_slots", note: "site format may have changed; not touching KV" }));
+    console.error(JSON.stringify({ event: "parse_zero_slots", note: "site format may have changed; not touching watched state" }));
+    if (expired.length > 0) await writeWatched(env.KV, active);
     return;
   }
 
-  const dateSlots = allSlots.filter((s) => s.date === watched.date);
-  const recipients = await readRecipients(env.KV);
-  const isHourly = new Date(event.scheduledTime).getUTCMinutes() === 0;
+  const isHourly = now.getUTCMinutes() === 0;
+  const isDaily = isDailyReportTick(now);
 
-  console.log(JSON.stringify({ event: "parsed", date: watched.date, slots: dateSlots.length, isHourly }));
+  const updated: WatchedDate[] = [];
+  for (const w of active) {
+    const dateSlots = allSlots.filter((s) => s.date === w.date);
+    console.log(JSON.stringify({ event: "parsed", date: w.date, slots: dateSlots.length, isHourly }));
 
-  // ── Daily report at 19:00 Bucharest ───────────────────────────────────────
-  let dailySendFailed = false;
-  let dailyDidSend = false;
-  if (isDailyReportTick(new Date(event.scheduledTime)) && recipients.length > 0) {
-    const seen = new Set(dateSlots.map((s) => `${s.calId}:${s.date}`));
-    const booked = watched.snapDaily.filter((s) => !seen.has(`${s.calId}:${s.date}`));
-    const added = diffSlots(dateSlots, watched.snapDaily);
-    const isFirst = watched.snapDaily.length === 0;
-    const results = await sendDailyReportEmail(
-      watched.date,
-      added,
-      booked,
-      dateSlots,
-      isFirst,
-      recipients,
-      env
-    );
-    for (const r of results) {
-      if (r.ok) console.log(JSON.stringify({ event: "daily_report_sent", recipient: r.recipient }));
-      else console.error(JSON.stringify({ event: "daily_report_failed", recipient: r.recipient, error: r.error }));
+    // ── Daily report at 19:00 Bucharest ─────────────────────────────────────
+    let dailySendFailed = false;
+    let dailyDidSend = false;
+    if (isDaily && recipients.length > 0) {
+      const seen = new Set(dateSlots.map((s) => `${s.calId}:${s.date}`));
+      const booked = w.snapDaily.filter((s) => !seen.has(`${s.calId}:${s.date}`));
+      const added = diffSlots(dateSlots, w.snapDaily);
+      const isFirst = w.snapDaily.length === 0;
+      const results = await sendDailyReportEmail(w.date, added, booked, dateSlots, isFirst, recipients, env);
+      for (const r of results) {
+        if (r.ok) console.log(JSON.stringify({ event: "daily_report_sent", date: w.date, recipient: r.recipient }));
+        else console.error(JSON.stringify({ event: "daily_report_failed", date: w.date, recipient: r.recipient, error: r.error }));
+      }
+      dailySendFailed = results.every((r) => !r.ok);
+      dailyDidSend = true;
     }
-    dailySendFailed = results.every((r) => !r.ok);
-    dailyDidSend = true;
+
+    // ── 15-min edge diff: notify if new slots appeared ──────────────────────
+    const newSlots = diffSlots(dateSlots, w.snap15);
+    let newSlotSendFailed = false;
+    if (newSlots.length > 0 && recipients.length > 0) {
+      const results = await sendNewSlotsEmail(w.date, newSlots, recipients, env);
+      for (const r of results) {
+        if (r.ok) console.log(JSON.stringify({ event: "new_slots_sent", date: w.date, recipient: r.recipient }));
+        else console.error(JSON.stringify({ event: "new_slots_send_failed", date: w.date, recipient: r.recipient, error: r.error }));
+      }
+      newSlotSendFailed = results.every((r) => !r.ok);
+    }
+
+    // ── Hourly: notify if slot count decreased ──────────────────────────────
+    let occupancySendFailed = false;
+    if (isHourly && dateSlots.length < w.countHourly && recipients.length > 0) {
+      const taken = w.countHourly - dateSlots.length;
+      const results = await sendOccupancyEmail(w.date, dateSlots.length, taken, recipients, env);
+      for (const r of results) {
+        if (r.ok) console.log(JSON.stringify({ event: "occupancy_sent", date: w.date, recipient: r.recipient }));
+        else console.error(JSON.stringify({ event: "occupancy_send_failed", date: w.date, recipient: r.recipient, error: r.error }));
+      }
+      occupancySendFailed = results.every((r) => !r.ok);
+    }
+
+    // Per-date at-least-once retention.
+    const newSnap15 = (newSlots.length > 0 && newSlotSendFailed) ? w.snap15 : slotsToStored(dateSlots);
+    const newCountHourly = isHourly ? (occupancySendFailed ? w.countHourly : dateSlots.length) : w.countHourly;
+    const newSnapDaily = (dailyDidSend && !dailySendFailed) ? dateSlots : w.snapDaily;
+
+    updated.push({
+      date: w.date,
+      snap15: newSnap15,
+      countHourly: newCountHourly,
+      snapDaily: newSnapDaily,
+    });
   }
 
-  // ── 15-min edge diff: notify if new slots appeared ────────────────────────
-  const newSlots = diffSlots(dateSlots, watched.snap15);
-  let newSlotSendFailed = false;
-  if (newSlots.length > 0 && recipients.length > 0) {
-    const results = await sendNewSlotsEmail(watched.date, newSlots, recipients, env);
-    for (const r of results) {
-      if (r.ok) console.log(JSON.stringify({ event: "new_slots_sent", recipient: r.recipient }));
-      else console.error(JSON.stringify({ event: "new_slots_send_failed", recipient: r.recipient, error: r.error }));
-    }
-    newSlotSendFailed = results.every((r) => !r.ok);
-  }
-
-  // ── Hourly: notify if slot count decreased ────────────────────────────────
-  let occupancySendFailed = false;
-  if (isHourly && dateSlots.length < watched.countHourly && recipients.length > 0) {
-    const taken = watched.countHourly - dateSlots.length;
-    const results = await sendOccupancyEmail(watched.date, dateSlots.length, taken, recipients, env);
-    for (const r of results) {
-      if (r.ok) console.log(JSON.stringify({ event: "occupancy_sent", recipient: r.recipient }));
-      else console.error(JSON.stringify({ event: "occupancy_send_failed", recipient: r.recipient, error: r.error }));
-    }
-    occupancySendFailed = results.every((r) => !r.ok);
-  }
-
-  // ── Update KV state ───────────────────────────────────────────────────────
-  // At-least-once: if new-slot email failed, keep old snap15 so it retries next tick.
-  const newSnap15 = (newSlots.length > 0 && newSlotSendFailed)
-    ? watched.snap15
-    : slotsToStored(dateSlots);
-
-  // Hourly baseline: always reset at :00 unless the occupancy email failed
-  // (retry the decrease notification next hour).
-  const newCountHourly = isHourly
-    ? (occupancySendFailed ? watched.countHourly : dateSlots.length)
-    : watched.countHourly;
-
-  const newSnapDaily = (dailyDidSend && !dailySendFailed)
-    ? dateSlots
-    : watched.snapDaily;
-  await writeWatched(env.KV, {
-    date: watched.date,
-    snap15: newSnap15,
-    countHourly: newCountHourly,
-    snapDaily: newSnapDaily,
-  });
-  console.log(JSON.stringify({ event: "done", durationMs: Date.now() - start, date: watched.date }));
+  await writeWatched(env.KV, updated);
+  console.log(JSON.stringify({ event: "done", durationMs: Date.now() - start, active: updated.length, expired: expired.length }));
 }
 
 // ── HTTP handler (web UI) ────────────────────────────────────────────────────
@@ -150,8 +155,8 @@ async function handleFetch(request: Request, env: Env): Promise<Response> {
   }
 
   if (request.method === "GET") {
-    const watched = await readWatched(env.KV);
-    return new Response(renderWatchPage(watched, path), {
+    const list = await readWatched(env.KV);
+    return new Response(renderWatchPage(list, path), {
       headers: { "Content-Type": "text/html; charset=utf-8" },
     });
   }
@@ -165,31 +170,47 @@ async function handleFetch(request: Request, env: Env): Promise<Response> {
     }
 
     const action = formData.get("action");
+    const date = (formData.get("date") as string | null) ?? "";
 
     if (action === "stop") {
-      const watched = await readWatched(env.KV);
-      if (watched) {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+        return new Response(renderErrorPage("Data introdusă este invalidă.", path), {
+          status: 400,
+          headers: { "Content-Type": "text/html; charset=utf-8" },
+        });
+      }
+      const removed = await removeWatchedDate(env.KV, date);
+      if (removed) {
         const recipients = await readRecipients(env.KV);
         if (recipients.length > 0) {
-          const results = await sendManualStopEmail(watched.date, recipients, env);
+          const results = await sendManualStopEmail(date, recipients, env);
           for (const r of results) {
-            if (r.ok) console.log(JSON.stringify({ event: "manual_stop_email_sent", recipient: r.recipient }));
-            else console.error(JSON.stringify({ event: "manual_stop_email_failed", recipient: r.recipient, error: r.error }));
+            if (r.ok) console.log(JSON.stringify({ event: "manual_stop_email_sent", date, recipient: r.recipient }));
+            else console.error(JSON.stringify({ event: "manual_stop_email_failed", date, recipient: r.recipient, error: r.error }));
           }
         }
+        console.log(JSON.stringify({ event: "watch_stopped", date }));
+        return new Response(renderConfirmPage(`Urmărire oprită pentru ${date}.`, path), {
+          headers: { "Content-Type": "text/html; charset=utf-8" },
+        });
       }
-      await clearWatched(env.KV);
-      console.log(JSON.stringify({ event: "watch_stopped" }));
-      return new Response(renderConfirmPage("Urmărire oprită.", path), {
+      return new Response(renderConfirmPage(`Data ${date} nu era urmărită.`, path), {
         headers: { "Content-Type": "text/html; charset=utf-8" },
       });
     }
 
     if (action === "watch") {
-      const date = (formData.get("date") as string | null) ?? "";
       if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
         return new Response(renderErrorPage("Data introdusă este invalidă.", path), {
           status: 400,
+          headers: { "Content-Type": "text/html; charset=utf-8" },
+        });
+      }
+
+      // Idempotent: if already watched, do nothing (no duplicate initial email).
+      const existing = await readWatched(env.KV);
+      if (existing.some((w) => w.date === date)) {
+        return new Response(renderConfirmPage(`Data ${date} este deja urmărită.`, path), {
           headers: { "Content-Type": "text/html; charset=utf-8" },
         });
       }
@@ -223,8 +244,8 @@ async function handleFetch(request: Request, env: Env): Promise<Response> {
       if (recipients.length > 0) {
         const results = await sendInitialEmail(date, dateSlots, 15, recipients, env);
         for (const r of results) {
-          if (r.ok) console.log(JSON.stringify({ event: "initial_email_sent", recipient: r.recipient }));
-          else console.error(JSON.stringify({ event: "initial_email_failed", recipient: r.recipient, error: r.error }));
+          if (r.ok) console.log(JSON.stringify({ event: "initial_email_sent", date, recipient: r.recipient }));
+          else console.error(JSON.stringify({ event: "initial_email_failed", date, recipient: r.recipient, error: r.error }));
         }
         if (results.every((r) => !r.ok)) {
           return new Response(renderErrorPage("Eroare la trimiterea emailului. Încearcă din nou.", path), {
@@ -234,7 +255,7 @@ async function handleFetch(request: Request, env: Env): Promise<Response> {
         }
       }
 
-      await writeWatched(env.KV, {
+      await addWatchedDate(env.KV, {
         date,
         snap15: slotsToStored(dateSlots),
         countHourly: dateSlots.length,
