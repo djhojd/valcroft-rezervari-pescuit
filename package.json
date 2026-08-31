@@ -19,7 +19,7 @@
   "type": "module",
   "devDependencies": {
     "typescript": "^6.0.3",
-    "wrangler": "^4.87.0"
+    "wrangler": "^4.127.1"
   },
   "dependencies": {
     "mimetext": "^3.0.28"
