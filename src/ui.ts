@@ -32,7 +32,7 @@ export function renderWatchPage(list: WatchedDate[], path: string): string {
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Valcroft — Urmărire disponibilitate</title>
   <style>
-    body { font-family: sans-serif; max-width: 480px; margin: 2rem auto; padding: 0 1rem; }
+    body { font-family: sans-serif; max-width: 640px; margin: 2rem auto; padding: 0 1rem; }
     label { display: block; margin-bottom: .5rem; }
     input[type=date] { font-size: 1rem; padding: .3rem; margin-top: .25rem; }
     button { padding: .4rem 1rem; font-size: 1rem; cursor: pointer; }
@@ -58,9 +58,10 @@ export function renderConfirmPage(message: string, path: string): string {
 <html lang="ro">
 <head>
   <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta http-equiv="refresh" content="2;url=${path}">
   <title>Valcroft</title>
-  <style>body{font-family:sans-serif;max-width:480px;margin:2rem auto;padding:0 1rem}</style>
+  <style>body{font-family:sans-serif;max-width:640px;margin:2rem auto;padding:0 1rem}</style>
 </head>
 <body>
   <p>${message}</p>
@@ -75,8 +76,9 @@ export function renderErrorPage(message: string, path: string): string {
 <html lang="ro">
 <head>
   <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Valcroft — Eroare</title>
-  <style>body{font-family:sans-serif;max-width:480px;margin:2rem auto;padding:0 1rem}p{color:#c0392b}</style>
+  <style>body{font-family:sans-serif;max-width:640px;margin:2rem auto;padding:0 1rem}p{color:#c0392b}</style>
 </head>
 <body>
   <h1>Eroare</h1>
