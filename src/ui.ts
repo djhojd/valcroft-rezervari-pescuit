@@ -86,8 +86,17 @@ const STYLES = `
     button.primary:hover { background: var(--accent-hover); border-color: var(--accent-hover); }
     button.danger { background: var(--danger); color: var(--danger-fg); border-color: var(--danger); }
     button.danger:hover { filter: brightness(1.1); border-color: var(--danger); }
-    .watched-list { list-style: none; padding: 0; }
-    .watched-list li { padding: .4rem 0; border-bottom: 1px solid var(--border); }
+    .watched-list { list-style: none; padding: 0; display: flex; flex-direction: column; gap: .5rem; }
+    .watched-list li {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: .5rem;
+      padding: .7rem .9rem;
+      background: var(--control-bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+    }
     .error { color: var(--danger); }
     .page-head { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
     .page-head h1 { margin: 0; font-size: 1.6rem; }
@@ -188,10 +197,10 @@ export function renderWatchPage(list: WatchedDate[], path: string): string {
     ${sorted.map((w) => `
       <li>
         <strong>${formatDateLong(w.date)}</strong>
-        <form method="POST" action="${path}" style="display:inline">
+        <form method="POST" action="${path}">
           <input type="hidden" name="action" value="stop">
           <input type="hidden" name="date" value="${w.date}">
-          <button type="submit" class="danger" style="margin-left:.5rem">Oprește</button>
+          <button type="submit" class="danger">Oprește</button>
         </form>
       </li>`).join("")}
   </ul>`;
