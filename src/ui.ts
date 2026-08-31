@@ -60,12 +60,14 @@ const STYLES = `
     input[type=date] {
       font-size: 1rem;
       padding: .3rem;
-      margin-top: .25rem;
       background: var(--control-bg);
       color: var(--fg);
       border: 1px solid var(--control-border);
       border-radius: 3px;
     }
+    .add-form { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; margin-top: 1.5rem; }
+    .add-form label { display: contents; }
+    .add-form .field-label { flex: none; }
     button {
       padding: .4rem 1rem;
       font-size: 1rem;
@@ -186,19 +188,20 @@ export function renderWatchPage(list: WatchedDate[], path: string): string {
       </li>`).join("")}
   </ul>`;
 
-  return page("Valcroft — Urmărire disponibilitate", `  <div class="page-head">
+  return page("Valcroft — Rezervări pescuit", `  <div class="page-head">
     <div>
       <h1>Valcroft</h1>
-      <h2>Urmărire disponibilitate</h2>
+      <h2>Rezervări pescuit</h2>
     </div>
     ${THEME_TOGGLE_BUTTON}
   </div>
   ${watchedSection}
-  <form method="POST" action="${path}" style="margin-top:1.5rem">
-    <label>Adaugă o dată:
+  <form method="POST" action="${path}" class="add-form">
+    <label>
+      <span class="field-label">Adaugă o dată:</span>
       <input type="date" name="date" value="${tomorrow()}" required>
     </label>
-    <button type="submit" name="action" value="watch">Urmărește această dată</button>
+    <button type="submit" name="action" value="watch">Începe urmărire</button>
   </form>`);
 }
 
