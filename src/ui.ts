@@ -102,7 +102,6 @@ const STYLES = `
     .error { color: var(--danger); }
     .page-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; }
     .page-head h1 { margin: 0; font-size: 1.6rem; }
-    .page-head h2 { margin: .2rem 0 0; font-size: 1rem; font-weight: normal; color: var(--muted); }
     .theme-toggle {
       flex: none;
       width: 40px;
@@ -161,6 +160,9 @@ function page(title: string, body: string, extraHead = ""): string {
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>%F0%9F%8E%A3</text></svg>">
+  <meta name="theme-color" content="#fff" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#161616" media="(prefers-color-scheme: dark)">
 ${extraHead}  <title>${title}</title>
   <style>${STYLES}</style>
   <script>${THEME_INIT}</script>
@@ -208,10 +210,7 @@ export function renderWatchPage(list: WatchedDate[], path: string): string {
   </ul>`;
 
   return page("Valcroft — Rezervări pescuit", `  <div class="page-head">
-    <div>
-      <h1>Valcroft</h1>
-      <h2>Rezervări pescuit</h2>
-    </div>
+    <h1>Valcroft</h1>
     ${THEME_TOGGLE_BUTTON}
   </div>
   ${watchedSection}
