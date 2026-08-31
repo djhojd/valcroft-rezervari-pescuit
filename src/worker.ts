@@ -156,7 +156,7 @@ async function handleFetch(request: Request, env: Env): Promise<Response> {
 
   if (request.method === "GET") {
     const list = await readWatched(env.KV);
-    return new Response(renderWatchPage(list, path), {
+    return new Response(renderWatchPage(list, path, env.PAGE_URL), {
       headers: { "Content-Type": "text/html; charset=utf-8" },
     });
   }

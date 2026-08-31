@@ -102,7 +102,8 @@ const STYLES = `
     .error { color: var(--danger); }
     .page-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; }
     .page-head h1 { margin: 0; font-size: 1.6rem; }
-    .theme-toggle {
+    .page-head .actions { display: flex; gap: .5rem; flex: none; }
+    .icon-btn {
       flex: none;
       width: 40px;
       height: 40px;
@@ -111,7 +112,15 @@ const STYLES = `
       align-items: center;
       justify-content: center;
     }
-    .theme-toggle svg { width: 20px; height: 20px; display: block; }
+    .icon-btn svg { width: 20px; height: 20px; display: block; }
+    a.icon-btn {
+      color: var(--fg);
+      background: var(--control-bg);
+      border: 1px solid var(--control-border);
+      border-radius: 3px;
+      text-decoration: none;
+    }
+    a.icon-btn:hover { border-color: var(--fg); }
   `;
 
 // Runs before first paint so a stored choice does not flash the default theme.
@@ -182,16 +191,21 @@ const ICONS = {
   auto: `${SVG_OPEN}<rect x="2" y="3" width="20" height="14" rx="2"></rect><path d="M8 21h8M12 17v4"></path></svg>`,
   light: `${SVG_OPEN}<circle cx="12" cy="12" r="4"></circle><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"></path></svg>`,
   dark: `${SVG_OPEN}<path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"></path></svg>`,
+  externalLink: `${SVG_OPEN}<path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><path d="M15 3h6v6"></path><path d="M10 14 21 3"></path></svg>`,
 };
 
 // Hidden until the script enables it, so it never appears without a handler.
-const THEME_TOGGLE_BUTTON = `<button type="button" id="theme-toggle" class="theme-toggle" hidden>
+const THEME_TOGGLE_BUTTON = `<button type="button" id="theme-toggle" class="icon-btn" hidden>
       <span data-icon="auto">${ICONS.auto}</span>
       <span data-icon="light" hidden>${ICONS.light}</span>
       <span data-icon="dark" hidden>${ICONS.dark}</span>
     </button>`;
 
-export function renderWatchPage(list: WatchedDate[], path: string): string {
+function siteLinkButton(pageUrl: string): string {
+  return `<a href="${pageUrl}" target="_blank" rel="noopener noreferrer" class="icon-btn" title="Site oficial">${ICONS.externalLink}</a>`;
+}
+
+export function renderWatchPage(list: WatchedDate[], path: string, pageUrl: string): string {
   const sorted = [...list].sort((a, b) => a.date.localeCompare(b.date));
 
   const watchedSection = sorted.length === 0
@@ -211,7 +225,10 @@ export function renderWatchPage(list: WatchedDate[], path: string): string {
 
   return page("Valcroft — Rezervări pescuit", `  <div class="page-head">
     <h1>Valcroft</h1>
-    ${THEME_TOGGLE_BUTTON}
+    <div class="actions">
+      ${siteLinkButton(pageUrl)}
+      ${THEME_TOGGLE_BUTTON}
+    </div>
   </div>
   ${watchedSection}
   <form method="POST" action="${path}" class="add-form">
