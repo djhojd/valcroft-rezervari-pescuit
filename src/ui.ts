@@ -7,6 +7,23 @@ function tomorrow(): string {
   return d.toISOString().slice(0, 10);
 }
 
+// Applied both from the system preference and from an explicit dark choice.
+const DARK_TOKENS = `
+      color-scheme: dark;
+      --bg: #161616;
+      --fg: #e8e8e8;
+      --muted: #a0a0a0;
+      --border: #333;
+      --danger: #e2665a;
+      --danger-fg: #1a1a1a;
+      --control-bg: #262626;
+      --control-border: #4d4d4d;
+      --link: #8ab4f8;
+      --accent: #3fa37c;
+      --accent-hover: #4fb98f;
+      --accent-fg: #10231c;
+    `;
+
 const STYLES = `
     :root {
       color-scheme: light;
@@ -19,33 +36,14 @@ const STYLES = `
       --control-bg: #f7f7f7;
       --control-border: #ccc;
       --link: #0b57d0;
+      --accent: #1a7f5a;
+      --accent-hover: #15684a;
+      --accent-fg: #fff;
     }
     @media (prefers-color-scheme: dark) {
-      :root:not([data-theme="light"]) {
-        color-scheme: dark;
-        --bg: #161616;
-        --fg: #e8e8e8;
-        --muted: #a0a0a0;
-        --border: #333;
-        --danger: #e2665a;
-        --danger-fg: #1a1a1a;
-        --control-bg: #262626;
-        --control-border: #4d4d4d;
-        --link: #8ab4f8;
-      }
+      :root:not([data-theme="light"]) {${DARK_TOKENS}}
     }
-    :root[data-theme="dark"] {
-      color-scheme: dark;
-      --bg: #161616;
-      --fg: #e8e8e8;
-      --muted: #a0a0a0;
-      --border: #333;
-      --danger: #e2665a;
-      --danger-fg: #1a1a1a;
-      --control-bg: #262626;
-      --control-border: #4d4d4d;
-      --link: #8ab4f8;
-    }
+    :root[data-theme="dark"] {${DARK_TOKENS}}
     body {
       font-family: sans-serif;
       max-width: 640px;
@@ -77,7 +75,17 @@ const STYLES = `
       border: 1px solid var(--control-border);
       border-radius: 3px;
     }
+    button:hover { border-color: var(--fg); }
+    button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+    button.primary {
+      background: var(--accent);
+      color: var(--accent-fg);
+      border-color: var(--accent);
+      font-weight: 600;
+    }
+    button.primary:hover { background: var(--accent-hover); border-color: var(--accent-hover); }
     button.danger { background: var(--danger); color: var(--danger-fg); border-color: var(--danger); }
+    button.danger:hover { filter: brightness(1.1); border-color: var(--danger); }
     .watched-list { list-style: none; padding: 0; }
     .watched-list li { padding: .4rem 0; border-bottom: 1px solid var(--border); }
     .error { color: var(--danger); }
@@ -201,7 +209,7 @@ export function renderWatchPage(list: WatchedDate[], path: string): string {
       <span class="field-label">Adaugă o dată:</span>
       <input type="date" name="date" value="${tomorrow()}" required>
     </label>
-    <button type="submit" name="action" value="watch">Începe urmărire</button>
+    <button type="submit" name="action" value="watch" class="primary">Începe urmărire</button>
   </form>`);
 }
 
