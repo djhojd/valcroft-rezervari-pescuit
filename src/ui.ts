@@ -45,7 +45,7 @@ const STYLES = `
     }
     :root[data-theme="dark"] {${DARK_TOKENS}}
     body {
-      font-family: sans-serif;
+      font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
       font-size: 1.05rem;
       line-height: 1.6;
       max-width: 640px;
@@ -100,7 +100,7 @@ const STYLES = `
       border-radius: 6px;
     }
     .error { color: var(--danger); }
-    .page-head { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
+    .page-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; }
     .page-head h1 { margin: 0; font-size: 1.6rem; }
     .page-head h2 { margin: .2rem 0 0; font-size: 1rem; font-weight: normal; color: var(--muted); }
     .theme-toggle {
