@@ -46,6 +46,8 @@ const STYLES = `
     :root[data-theme="dark"] {${DARK_TOKENS}}
     body {
       font-family: sans-serif;
+      font-size: 1.05rem;
+      line-height: 1.6;
       max-width: 640px;
       margin: 2rem auto;
       padding: 0 1rem;
