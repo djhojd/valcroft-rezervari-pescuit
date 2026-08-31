@@ -1,35 +1,25 @@
 export type Slot = { calId: string; pontoon: string; date: string };
 
-const RO_MONTHS: Record<string, number> = {
-  ianuarie: 1, februarie: 2, martie: 3, aprilie: 4, mai: 5, iunie: 6,
-  iulie: 7, august: 8, septembrie: 9, octombrie: 10, noiembrie: 11, decembrie: 12,
-};
+// Cells outside the rendered month are shown by the calendar but their booked
+// state is not rendered reliably, so they are never treated as available.
+const UNAVAILABLE_CLASSES = ["booked", "prev-date", "prev-month", "next-month"];
+
+function normalizeDate(raw: string): string | null {
+  const m = raw.trim().match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+  if (!m) return null;
+  return `${m[1]}-${m[2].padStart(2, "0")}-${m[3].padStart(2, "0")}`;
+}
 
 export async function parseAvailability(html: string): Promise<Slot[]> {
   const slots: Slot[] = [];
+  const seen = new Set<string>();
 
-  // Tracked across the whole stream
   let lastPontoonLabel: string | null = null;
   let pBuf = "";
-
-  // Tracked per <table>
   let currentCalId: string | null = null;
   let currentPontoon: string | null = null;
-  let currentMonth: number | null = null;
-  let currentYear: number | null = null;
-  let monthHeaderBuf = "";
-  let inMonthHeader = false;
-
-  // Tracked per <td>
-  let currentTdSkipped = false;
-  let dayBuf = "";
-  let inDay = false;
-
-  const isAvailable = (cls: string[]) =>
-    !cls.includes("booked") && !cls.includes("prev-date") && !cls.includes("prev-month");
 
   const rewriter = new HTMLRewriter()
-    // Track most recent "Ponton X" paragraph
     .on("p", {
       element() {
         pBuf = "";
@@ -44,61 +34,28 @@ export async function parseAvailability(html: string): Promise<Slot[]> {
       },
     })
 
-    // Each pontoon's calendar table
     .on("table[data-calendar-id]", {
       element(el) {
         currentCalId = el.getAttribute("data-calendar-id");
         currentPontoon = lastPontoonLabel;
-        currentMonth = null;
-        currentYear = null;
       },
     })
 
-    // Month/year header (Booked plugin renders it inside the table thead)
-    .on("table[data-calendar-id] .monthName", {
-      element() { inMonthHeader = true; monthHeaderBuf = ""; },
-      text(t) {
-        if (inMonthHeader) monthHeaderBuf += t.text;
-        if (t.lastInTextNode) {
-          inMonthHeader = false;
-          // Match "mai 2026" / "Mai 2026" / "MAI 2026"
-          const m = monthHeaderBuf.toLowerCase().match(/([a-zăâîșț]+)\s+(\d{4})/);
-          if (m && RO_MONTHS[m[1]]) {
-            currentMonth = RO_MONTHS[m[1]];
-            currentYear = parseInt(m[2], 10);
-          }
-        }
-      },
-    })
-
-    // Day cells
-    .on("table[data-calendar-id] td", {
+    .on("table[data-calendar-id] td[data-date]", {
       element(el) {
+        if (!currentCalId || !currentPontoon) return;
+
         const cls = (el.getAttribute("class") || "").trim();
-        currentTdSkipped = !isAvailable(cls ? cls.split(/\s+/) : []);
-        dayBuf = "";
-      },
-    })
-    .on("table[data-calendar-id] td .date", {
-      element() { inDay = true; dayBuf = ""; },
-      text(t) {
-        if (inDay) dayBuf += t.text;
-        if (t.lastInTextNode) {
-          inDay = false;
-          if (
-            !currentTdSkipped &&
-            currentCalId &&
-            currentPontoon &&
-            currentMonth &&
-            currentYear
-          ) {
-            const day = parseInt(dayBuf.trim(), 10);
-            if (Number.isFinite(day)) {
-              const date = `${currentYear}-${String(currentMonth).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
-              slots.push({ calId: currentCalId, pontoon: currentPontoon, date });
-            }
-          }
-        }
+        const classes = cls ? cls.split(/\s+/) : [];
+        if (classes.some((c) => UNAVAILABLE_CLASSES.includes(c))) return;
+
+        const date = normalizeDate(el.getAttribute("data-date") || "");
+        if (!date) return;
+
+        const key = `${currentCalId}:${date}`;
+        if (seen.has(key)) return;
+        seen.add(key);
+        slots.push({ calId: currentCalId, pontoon: currentPontoon, date });
       },
     });
 
